@@ -904,7 +904,10 @@ void main() {
       expect(controller.updatePhase, UpdateOperationPhase.idle);
 
       await controller.checkForUpdates();
-      expect(controller.lastError, controller.strings.get('operation_failed'));
+      expect(
+        controller.lastError,
+        controller.strings.get('update_check_failed'),
+      );
       expect(controller.lastError, isNot(contains('release endpoint')));
       controller.dispose();
     },
