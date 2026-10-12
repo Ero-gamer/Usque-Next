@@ -85,7 +85,18 @@ impl LiveAds {
         }
         *stamp = Some(next);
         // Missing/corrupt replacements never erase an active good revision.
-        if let Ok(rules) = AdsRules::load(cache_dir) {
+        let loaded = if self
+            .state
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .rules
+            .is_some()
+        {
+            AdsRules::load_primary(cache_dir)
+        } else {
+            AdsRules::load(cache_dir)
+        };
+        if let Ok(rules) = loaded {
             self.state.write().unwrap_or_else(|e| e.into_inner()).rules = Some(Arc::new(rules));
         }
     }
@@ -166,6 +177,40 @@ mod tests {
             GeoRoute::Tunnel
         );
         assert!(policy.ads_revision().is_none());
+    }
+
+    #[test]
+    fn damaged_primary_keeps_newer_memory_rules_instead_of_loading_old_backup() {
+        for missing in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = usque_geo::global_geosite_cache_path(dir.path());
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(
+                dir.path().join("geo/geosite/ads-last-good.dat"),
+                catalog("old.test"),
+            )
+            .unwrap();
+            std::fs::write(&path, catalog("current.test")).unwrap();
+            let ads = LiveAds::watch(dir.path(), true);
+            let revision = ads.rules().unwrap().revision().to_owned();
+            if missing {
+                std::fs::remove_file(&path).unwrap();
+            } else {
+                std::fs::write(&path, b"invalid").unwrap();
+            }
+            ads.refresh();
+            assert_eq!(ads.rules().unwrap().revision(), revision);
+            assert!(ads.rules().unwrap().contains("current.test"));
+            assert!(!ads.rules().unwrap().contains("old.test"));
+            // A fresh session still recovers from the last verified disk backup.
+            let fresh = LiveAds::watch(dir.path(), true);
+            assert!(fresh.rules().unwrap().contains("old.test"));
+            std::fs::write(&path, catalog("repaired.test")).unwrap();
+            ads.refresh();
+            fresh.refresh();
+            assert!(ads.rules().unwrap().contains("repaired.test"));
+            assert!(fresh.rules().unwrap().contains("repaired.test"));
+        }
     }
 
     #[test]

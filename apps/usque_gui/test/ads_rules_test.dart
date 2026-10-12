@@ -16,7 +16,19 @@ import 'ui_workflow_test.dart' show workflowHost;
 class AdsEngine extends FormEngine implements AdsRulesClient {
   int downloads = 0;
   bool fail = false;
+  bool brokenCache = false;
+  Completer<GeoRulesList>? pendingList;
   Completer<void>? pendingDownload;
+
+  @override
+  Future<GeoRulesList> listGeoRules() async {
+    if (brokenCache) {
+      throw const EngineException('GEO_RULES_FAILED', 'invalid geosite');
+    }
+    final pending = pendingList;
+    pendingList = null;
+    return pending == null ? storedGeoRules : pending.future;
+  }
 
   @override
   Future<EngineCapabilities?> getCapabilities() async =>
@@ -32,6 +44,7 @@ class AdsEngine extends FormEngine implements AdsRulesClient {
     downloads++;
     await pendingDownload?.future;
     if (!fail) {
+      brokenCache = false;
       storedGeoRules = GeoRulesList(
         hasAds: true,
         hasGlobalGeosite: true,
@@ -210,6 +223,98 @@ void main() {
       await app.maintainAdsRules();
       expect(engine.downloads, 1);
       expect(app.geoRules.hasAds, isTrue);
+    },
+  );
+
+  for (final request in ['manual', 'prepare', 'automatic']) {
+    test('a corrupt catalog allows verified repair during $request', () async {
+      final engine = AdsEngine();
+      final app = AppController(engine);
+      addTearDown(app.dispose);
+      await app.initialize();
+      if (request == 'automatic') {
+        await app.saveNetwork(
+          app.activeProfile.copyWith(
+            routing: const RoutingSettings(adsEnabled: true),
+          ),
+          changedFields: ['routing'],
+        );
+        await app.maintainAdsRules();
+      }
+      final before = engine.downloads;
+      engine.brokenCache = true;
+      if (request == 'automatic') {
+        await app.maintainAdsRules();
+      } else {
+        expect(
+          await app.updateAdsRules(
+            manual: request == 'manual',
+            prepare: request == 'prepare',
+          ),
+          isTrue,
+        );
+      }
+      expect(engine.downloads, before + 1);
+      expect(engine.brokenCache, isFalse);
+      expect(app.geoRules.adsRevision, 'revision-${before + 1}');
+      expect(app.adsRulesFailed, isFalse);
+    });
+  }
+
+  test(
+    'failed corrupt-cache repair remains failed and throttles retries',
+    () async {
+      final engine = AdsEngine();
+      final app = AppController(engine);
+      addTearDown(app.dispose);
+      await app.initialize();
+      engine.brokenCache = true;
+      engine.fail = true;
+      await app.saveNetwork(
+        app.activeProfile.copyWith(
+          routing: const RoutingSettings(adsEnabled: true),
+        ),
+        changedFields: ['routing'],
+      );
+      await app.maintainAdsRules();
+      expect(engine.downloads, 1);
+      expect(app.geoRules.hasAds, isFalse);
+      expect(app.adsRulesFailed, isTrue);
+      engine.fail = false;
+      expect(await app.updateAdsRules(manual: true), isTrue);
+      expect(engine.downloads, 2);
+    },
+  );
+
+  test(
+    'manual requests behind a throttled check share one forced download',
+    () async {
+      final now = DateTime(2026, 10, 12);
+      final engine = AdsEngine();
+      final app = AppController(engine, adsClock: () => now);
+      addTearDown(app.dispose);
+      await app.initialize();
+      await app.saveNetwork(
+        app.activeProfile.copyWith(
+          routing: const RoutingSettings(adsEnabled: true),
+        ),
+        changedFields: ['routing'],
+      );
+      await app.maintainAdsRules();
+      expect(engine.downloads, 1);
+      final held = Completer<GeoRulesList>();
+      engine.pendingList = held;
+      final automatic = app.maintainAdsRules();
+      await Future<void>.delayed(Duration.zero);
+      expect(app.adsRulesBusy, isFalse);
+      final manual = app.updateAdsRules(manual: true);
+      final secondManual = app.updateAdsRules(manual: true);
+      held.complete(engine.storedGeoRules);
+      await automatic;
+      expect(await manual, isTrue);
+      expect(await secondManual, isTrue);
+      expect(engine.downloads, 2);
+      expect(app.geoRules.adsRevision, 'revision-2');
     },
   );
 

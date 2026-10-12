@@ -124,17 +124,21 @@ impl AdsRules {
     }
 
     pub fn load(cache_dir: &Path) -> Result<Self, GeoError> {
-        for path in [
-            global_geosite_cache_path(cache_dir),
-            cache_dir.join("geo/geosite/ads-last-good.dat"),
-        ] {
-            if let Ok(metadata) = std::fs::metadata(&path)
-                && metadata.len() <= MAX_GEOSITE_BYTES as u64
-                && let Ok(bytes) = std::fs::read(path)
-                && let Ok(rules) = Self::parse(&bytes)
-            {
-                return Ok(rules);
-            }
+        Self::load_primary(cache_dir)
+            .or_else(|_| Self::load_file(&cache_dir.join("geo/geosite/ads-last-good.dat")))
+    }
+
+    /// Load a replacement without falling back to an older on-disk revision.
+    pub fn load_primary(cache_dir: &Path) -> Result<Self, GeoError> {
+        Self::load_file(&global_geosite_cache_path(cache_dir))
+    }
+
+    fn load_file(path: &Path) -> Result<Self, GeoError> {
+        if let Ok(metadata) = std::fs::metadata(path)
+            && metadata.len() <= MAX_GEOSITE_BYTES as u64
+            && let Ok(bytes) = std::fs::read(path)
+        {
+            return Self::parse(&bytes);
         }
         Err(GeoError::InvalidGeoSite)
     }

@@ -1245,8 +1245,7 @@ impl WindowsVpnRuntime {
                 ..Default::default()
             },
         });
-        let preparation =
-            prepare_vpn_protector(&agent, operation_id, registration_api, profile, geo_enabled);
+        let preparation = prepare_vpn_protector(&agent, operation_id, registration_api, profile);
         let preparation = if profile.chain_enabled() {
             await_prepared_gate_startup(&startup_cancel, &mut startup_lease, preparation).await
         } else {
@@ -1539,7 +1538,6 @@ impl WindowsVpnRuntime {
                         self.operation_id,
                         bootstrap.registration_api.clone(),
                         profile,
-                        true,
                     )
                     .await
                     .map_err(|error| TransportError::VpnGate(error.gate_failure()))?,
@@ -2114,7 +2112,6 @@ async fn prepare_vpn_protector(
     operation_id: Uuid,
     registration_api: Vec<SocketAddr>,
     profile: &Profile,
-    geo_enabled: bool,
 ) -> Result<Arc<WindowsVpnSocketProtector>, WindowsVpnError> {
     let state = agent.get_state().await?;
     if state.operation_id != operation_id.to_string() {
@@ -2126,7 +2123,7 @@ async fn prepare_vpn_protector(
         .is_some_and(|plan| plan.automatic_endpoint_policy.is_some());
     let physical_info = agent.get_physical_network_info(operation_id).await?;
     let dns_servers = physical_dns_endpoints(&physical_info)?;
-    validate_physical_dns(geo_enabled, profile.direct_dns.mode, &dns_servers)?;
+    validate_physical_dns(profile, &dns_servers)?;
     let generation = physical_info.generation;
     let protector = Arc::new(WindowsVpnSocketProtector {
         registration_api,
@@ -2151,12 +2148,11 @@ async fn prepare_vpn_protector(
     Ok(protector)
 }
 
-fn validate_physical_dns(
-    geo_enabled: bool,
-    mode: usque_core::DirectDnsMode,
-    servers: &[SocketAddr],
-) -> Result<(), WindowsVpnError> {
-    if geo_enabled && mode == usque_core::DirectDnsMode::PhysicalSystem && servers.is_empty() {
+fn validate_physical_dns(profile: &Profile, servers: &[SocketAddr]) -> Result<(), WindowsVpnError> {
+    if profile.has_domain_direct_rules()
+        && profile.direct_dns.mode == usque_core::DirectDnsMode::PhysicalSystem
+        && servers.is_empty()
+    {
         Err(WindowsVpnError::PhysicalDnsUnavailable)
     } else {
         Ok(())
@@ -4920,13 +4916,48 @@ mod tests {
     fn geo_startup_accepts_effective_dhcp_dns_but_rejects_an_empty_physical_snapshot() {
         use usque_core::DirectDnsMode;
         let servers = ["192.0.2.53:53".parse().unwrap()];
-        assert!(validate_physical_dns(true, DirectDnsMode::PhysicalSystem, &servers).is_ok());
-        assert!(matches!(
-            validate_physical_dns(true, DirectDnsMode::PhysicalSystem, &[]),
-            Err(WindowsVpnError::PhysicalDnsUnavailable)
-        ));
-        assert!(validate_physical_dns(false, DirectDnsMode::PhysicalSystem, &[]).is_ok());
-        assert!(validate_physical_dns(true, DirectDnsMode::Doh, &[]).is_ok());
+        let mut country = Profile::default();
+        country.geo_direct_countries.push("CN".into());
+        let mut bypass = Profile::default();
+        bypass.bypass_domains.push("direct.test".into());
+        let mut custom = Profile::default();
+        custom.routing.rules.push(usque_core::RoutingRule {
+            id: Uuid::new_v4(),
+            kind: usque_core::RoutingMatch::Domain,
+            target: "direct.test".into(),
+            action: usque_core::RoutingAction::Direct,
+        });
+        for mut profile in [country, bypass, custom] {
+            assert!(validate_physical_dns(&profile, &servers).is_ok());
+            assert!(matches!(
+                validate_physical_dns(&profile, &[]),
+                Err(WindowsVpnError::PhysicalDnsUnavailable)
+            ));
+            profile.direct_dns.mode = DirectDnsMode::Doh;
+            assert!(validate_physical_dns(&profile, &[]).is_ok());
+        }
+    }
+
+    #[test]
+    fn live_ads_and_non_direct_rules_do_not_require_physical_dns() {
+        let mut profile = Profile::default();
+        for enabled in [false, true] {
+            profile.routing.ads_enabled = enabled;
+            assert!(validate_physical_dns(&profile, &[]).is_ok());
+            for action in [
+                usque_core::RoutingAction::Proxy,
+                usque_core::RoutingAction::Reject,
+            ] {
+                profile.routing.rules = vec![usque_core::RoutingRule {
+                    id: Uuid::new_v4(),
+                    kind: usque_core::RoutingMatch::Domain,
+                    target: "ads.test".into(),
+                    action,
+                }];
+                assert!(validate_physical_dns(&profile, &[]).is_ok());
+            }
+            profile.routing.rules.clear();
+        }
     }
 
     #[tokio::test]

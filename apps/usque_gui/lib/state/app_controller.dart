@@ -15,6 +15,15 @@ import 'diagnostics_controller.dart';
 import 'network_quality_controller.dart';
 import 'network_settings_controller.dart';
 
+class _AdsRulesWork {
+  _AdsRulesWork({required this.manual, required this.prepare});
+
+  final bool manual;
+  final bool prepare;
+  bool downloadStarted = false;
+  late final Future<bool> future;
+}
+
 class AppController extends ChangeNotifier {
   Future<Map<Object?, Object?>> warpWireguard(Map<String, Object?> request) {
     final engine = _engine;
@@ -289,7 +298,7 @@ class AppController extends ChangeNotifier {
   bool get geoOperationActive => _geoOperationActive;
   Completer<void>? _geoIdle;
   final DateTime Function() _adsClock;
-  Future<bool>? _adsWork;
+  _AdsRulesWork? _adsWork;
   Timer? _adsTimer;
   bool adsRulesBusy = false;
   bool adsRulesFailed = false;
@@ -1703,21 +1712,35 @@ class AppController extends ChangeNotifier {
   }
 
   Future<bool> updateAdsRules({bool manual = false, bool prepare = false}) {
-    final pending = _adsWork;
-    if (pending != null) return pending;
     if (_disposed || _clearing || !supportsLiveAds) return Future.value(false);
-    late final Future<bool> work;
-    work = _updateAdsRules(manual: manual, prepare: prepare).whenComplete(() {
+    final pending = _adsWork;
+    if (pending != null) {
+      final generation = _dataGeneration;
+      return pending.future.then((success) {
+        if (_disposed || _clearing || generation != _dataGeneration) {
+          return false;
+        }
+        // An actual download satisfies joined requests. A throttled check does
+        // not satisfy Update now, or preparation that still has no valid rules.
+        if (!pending.downloadStarted &&
+            ((manual && !pending.manual) ||
+                (prepare && !success && !pending.prepare))) {
+          return updateAdsRules(manual: manual, prepare: prepare);
+        }
+        return success;
+      });
+    }
+    final work = _AdsRulesWork(manual: manual, prepare: prepare);
+    work.future = _updateAdsRules(work).whenComplete(() {
       if (identical(_adsWork, work)) _adsWork = null;
     });
     _adsWork = work;
-    return work;
+    return work.future;
   }
 
-  Future<bool> _updateAdsRules({
-    required bool manual,
-    required bool prepare,
-  }) async {
+  Future<bool> _updateAdsRules(_AdsRulesWork work) async {
+    final manual = work.manual;
+    final prepare = work.prepare;
     final generation = _dataGeneration;
     bool current() => !_disposed && !_clearing && generation == _dataGeneration;
     final engine = _engine as AdsRulesClient;
@@ -1728,15 +1751,21 @@ class AppController extends ChangeNotifier {
       if (!manual && !prepare && !activeProfile.routing.adsEnabled) {
         return false;
       }
-      final next = await _engine.listGeoRules();
+      GeoRulesList? next;
+      try {
+        next = await _engine.listGeoRules();
+      } on EngineException {
+        // A corrupt catalog can prevent listing. Allow the verified updater
+        // to repair it; only the post-update listing can establish success.
+      }
       if (!current()) return false;
-      geoRules = next;
+      if (next != null) geoRules = next;
       final now = _adsClock();
       final deadline = _preferences?.getInt('ads_next_check');
       final due = deadline == null
           ? null
           : DateTime.fromMillisecondsSinceEpoch(deadline);
-      if (prepare && next.hasAds) return true;
+      if (!manual && prepare && next?.hasAds == true) return true;
       final retrying = _preferences?.getBool('ads_check_failed') ?? false;
       final interval = retrying
           ? const Duration(hours: 1)
@@ -1746,9 +1775,9 @@ class AppController extends ChangeNotifier {
           due != null &&
           due.isAfter(now) &&
           due.difference(now) <= interval &&
-          (next.hasAds || retrying)) {
+          (next?.hasAds == true || retrying)) {
         _scheduleAdsCheck(due.difference(now));
-        return next.hasAds;
+        return next?.hasAds == true;
       }
       adsRulesBusy = true;
       adsRulesFailed = false;
@@ -1763,6 +1792,7 @@ class AppController extends ChangeNotifier {
         now.add(const Duration(hours: 1)).millisecondsSinceEpoch,
       );
       if (!current()) return false;
+      work.downloadStarted = true;
       final results = await engine.updateAdsRules();
       if (!current()) return false;
       final refreshed = await _engine.listGeoRules();
