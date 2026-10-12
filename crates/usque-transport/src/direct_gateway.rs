@@ -314,9 +314,16 @@ impl DirectGatewayRouter {
                 || (profile.chain_enabled()
                     && (profile.dns_mode == usque_core::DnsMode::Tunnel
                         || profile.custom_chain().is_some())));
-        let split_dns_enabled = gate_dns
+        // Prepare the internal DNS listener even in proxy-only sessions: a
+        // later hot TUN attachment must not advertise a nonexistent resolver.
+        let split_dns_enabled = policy.supports_live_ads()
+            || gate_dns
             || (profile.frontends.tunnel && profile.needs_domain_routing() && policy.is_enabled());
-        if split_dns_enabled && policy.has_direct_routes() && !protector.tun_direct_available() {
+        if profile.frontends.tunnel
+            && split_dns_enabled
+            && policy.has_direct_routes()
+            && !protector.tun_direct_available()
+        {
             return Err(TransportError::Dns(
                 "platform cannot safely bypass the TUN for Split DNS".to_owned(),
             ));
@@ -494,6 +501,11 @@ impl DirectGatewayRouter {
             stack_incoming.send_async(packet).await;
             self.counters.record_sent(packet.len());
             return true;
+        }
+        // A prepared DNS listener does not authorize physical packet egress.
+        // Keep the original TUN protection boundary after a hot attachment.
+        if !self.protector.tun_direct_available() {
+            return false;
         }
         if self.dns_hints.route_ip(
             parsed.destination,
@@ -1015,6 +1027,57 @@ mod tests {
             }),
             Response::TcpListen(_)
         ));
+    }
+
+    #[tokio::test]
+    async fn proxy_session_prepares_ads_dns_but_tun_direct_still_requires_protection() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut profile = Profile::default();
+        profile.frontends.tunnel = false;
+        profile.allow_lan = true;
+        let policy = Arc::new(
+            GeoDirectPolicy::disabled()
+                .with_custom_rules(&profile)
+                .unwrap()
+                .with_ads(dir.path()),
+        );
+        let (stack, _pipe) = bounded_piped(proxy_netstack_config(&profile).0);
+        let channel = stack.command_channel();
+        let task = stack.spawn_tokio();
+        let addresses = (Ipv4Addr::new(192, 0, 2, 1), "2001:db8::1".parse().unwrap());
+        channel
+            .set_ips([IpAddr::V4(addresses.0), IpAddr::V6(addresses.1)])
+            .await
+            .unwrap();
+        let cancel = CancellationToken::new();
+        let (gateway, _) = DirectGatewayRouter::start(
+            &profile,
+            policy.clone(),
+            crate::socket::noop_socket_protector(),
+            Arc::new(TrafficCounters::default()),
+            Some((channel.clone(), addresses)),
+            &cancel,
+        )
+        .await
+        .unwrap();
+        assert!(gateway.split_dns.is_some());
+        assert!(!gateway.protector.tun_direct_available());
+        drop(gateway);
+        profile.frontends.tunnel = true;
+        assert!(
+            DirectGatewayRouter::start(
+                &profile,
+                policy,
+                crate::socket::noop_socket_protector(),
+                Arc::new(TrafficCounters::default()),
+                Some((channel, addresses)),
+                &cancel,
+            )
+            .await
+            .is_err()
+        );
+        cancel.cancel();
+        task.abort();
     }
 
     struct LoopbackClassifier;

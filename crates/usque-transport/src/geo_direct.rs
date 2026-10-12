@@ -77,7 +77,7 @@ pub struct GeoDirectPolicy {
     routing: usque_core::RoutingSettings,
     routing_networks: Vec<(usque_core::config::IpNet, usque_core::RoutingAction)>,
     routing_domains: Vec<(String, usque_core::RoutingAction)>,
-    ads: Option<Arc<usque_geo::AdsRules>>,
+    ads: Arc<crate::live_ads::LiveAds>,
 }
 
 impl Default for GeoDirectPolicy {
@@ -98,7 +98,7 @@ impl GeoDirectPolicy {
             routing: Default::default(),
             routing_networks: Vec::new(),
             routing_domains: Vec::new(),
-            ads: None,
+            ads: Arc::default(),
         }
     }
 
@@ -153,7 +153,7 @@ impl GeoDirectPolicy {
             routing: Default::default(),
             routing_networks: Vec::new(),
             routing_domains: Vec::new(),
-            ads: None,
+            ads: Arc::default(),
         }
     }
 
@@ -189,15 +189,28 @@ impl GeoDirectPolicy {
     }
 
     pub fn with_ads(mut self, cache_dir: &Path) -> Self {
-        if self.routing.ads_enabled {
-            self.ads = usque_geo::AdsRules::load(cache_dir).ok().map(Arc::new);
-        }
+        self.ads = crate::live_ads::LiveAds::watch(cache_dir, self.routing.ads_enabled);
         self
     }
 
-    pub fn ads_revision(&self) -> Option<&str> {
-        self.ads.as_ref().map(|ads| ads.revision())
+    pub fn ads_revision(&self) -> Option<String> {
+        self.ads.rules().map(|ads| ads.revision().to_owned())
     }
+
+    pub fn update_ads_enabled(&self, enabled: bool) {
+        self.ads.set_enabled(enabled);
+    }
+
+    pub fn supports_live_ads(&self) -> bool {
+        self.ads.supported()
+    }
+    pub(crate) fn start_ads_watcher(&self) {
+        // Android constructs this policy on a JNI thread before Tokio exists.
+        if self.supports_live_ads() {
+            self.ads.start_watching();
+        }
+    }
+
     pub fn needs_direct_dns(&self) -> bool {
         !self.countries.is_empty() || !self.domains.is_empty() || self.routing.has_direct_domains()
     }
@@ -263,6 +276,7 @@ impl GeoDirectPolicy {
             || !self.networks.is_empty()
             || !self.domains.is_empty()
             || !self.routing.rules.is_empty()
+            || self.supports_live_ads()
             || self.routing.ads_enabled
     }
 
@@ -273,7 +287,7 @@ impl GeoDirectPolicy {
         if let Some(route) = self.custom_host(host) {
             return route;
         }
-        if self.ads.as_ref().is_some_and(|ads| ads.contains(host)) {
+        if self.ads.rules().is_some_and(|ads| ads.contains(host)) {
             return GeoRoute::Reject;
         }
         if !self.domains.is_empty()

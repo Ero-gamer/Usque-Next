@@ -167,6 +167,20 @@ where
     Ok(results)
 }
 
+/// Update only the shared GeoSite artifact and require a complete Ads category.
+pub async fn update_ads_rules<F: HttpFetch>(
+    downloader: &GeoDownloader<F>,
+) -> Result<Vec<GeoRulesUpdate>, GeoError> {
+    let result = from_artifact(downloader.update_ads().await);
+    if matches!(
+        result.status,
+        UpdateStatus::Updated | UpdateStatus::UpToDate
+    ) {
+        record_successful_geo_update(downloader.cache_dir())?;
+    }
+    Ok(vec![result])
+}
+
 pub async fn update_all_geo_rules<F, P>(
     downloader: &GeoDownloader<F>,
     mut progress: P,

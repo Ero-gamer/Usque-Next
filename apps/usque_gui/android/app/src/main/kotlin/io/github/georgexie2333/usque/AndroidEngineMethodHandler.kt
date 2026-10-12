@@ -685,6 +685,14 @@ internal class AndroidEngineMethodHandler(
                 downloadGeoRules(call, result)
             }
 
+            "updateAdsRules" -> {
+                runProfileCommand(
+                    flutterValueToJson(mapOf("command" to "update_ads_rules")),
+                    result,
+                    returnCatalog = true,
+                )
+            }
+
             "updateAllGeoRules" -> {
                 updateAllGeoRules(result)
             }

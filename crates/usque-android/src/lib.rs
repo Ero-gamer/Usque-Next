@@ -143,6 +143,7 @@ pub extern "system" fn Java_io_github_georgexie2333_usque_NativeEngine_nativeCap
             "automatic_endpoints": engine_ready(),
             "zero_trust_endpoint_editing": engine_ready(),
             "routing_rules": engine_ready(),
+            "live_ads_rules": engine_ready(),
             "chain_openvpn_multi_endpoint": engine_ready(),
             "application_quic_blocking": engine_ready(),
             "network_quality": engine_ready() && usque_transport::PRODUCTION_NETWORK_FEATURES.network_quality_metrics,
@@ -1464,6 +1465,7 @@ enum AndroidConfigCommand {
         country_code: String,
     },
     UpdateAllGeoRules,
+    UpdateAdsRules,
 }
 
 fn validate_android_routing_client(
@@ -1511,6 +1513,7 @@ fn apply_profile_command(config_path: &str, request_json: &str) -> Result<String
         command,
         AndroidConfigCommand::ListGeoRules
             | AndroidConfigCommand::DownloadGeoRules { .. }
+            | AndroidConfigCommand::UpdateAdsRules
             | AndroidConfigCommand::UpdateAllGeoRules
     ) {
         return apply_geo_command(store.path(), command);
@@ -1948,6 +1951,7 @@ fn apply_profile_command(config_path: &str, request_json: &str) -> Result<String
         }
         AndroidConfigCommand::ListGeoRules
         | AndroidConfigCommand::DownloadGeoRules { .. }
+        | AndroidConfigCommand::UpdateAdsRules
         | AndroidConfigCommand::UpdateAllGeoRules => {
             return apply_geo_command(store.path(), command);
         }
@@ -2030,9 +2034,10 @@ fn apply_geo_command(
             .map_err(|error| error.to_string())
         }
         AndroidConfigCommand::DownloadGeoRules { country_code } => {
-            geo_update_json(cache_dir, Some(country_code))
+            geo_update_json(cache_dir, Some(country_code), false)
         }
-        AndroidConfigCommand::UpdateAllGeoRules => geo_update_json(cache_dir, None),
+        AndroidConfigCommand::UpdateAllGeoRules => geo_update_json(cache_dir, None, false),
+        AndroidConfigCommand::UpdateAdsRules => geo_update_json(cache_dir, None, true),
         _ => Err("unsupported geo command".to_owned()),
     }
 }
@@ -2040,6 +2045,7 @@ fn apply_geo_command(
 fn geo_update_json(
     cache_dir: &std::path::Path,
     country_code: Option<String>,
+    ads_only: bool,
 ) -> Result<String, String> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -2049,6 +2055,9 @@ fn geo_update_json(
     let downloader = usque_geo::GeoDownloader::new(fetch, cache_dir);
     let results = runtime
         .block_on(async {
+            if ads_only {
+                return usque_core::geo_rules::update_ads_rules(&downloader).await;
+            }
             match country_code.as_deref() {
                 Some(country) => usque_core::download_geo_rules(&downloader, country, |_| {}).await,
                 None => usque_core::update_all_geo_rules(&downloader, |_| {}).await,

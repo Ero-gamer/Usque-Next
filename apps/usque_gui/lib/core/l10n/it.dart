@@ -683,7 +683,7 @@ const Map<String, String> kItCatalog = <String, String>{
       "Azioni diverse per la stessa destinazione. Modifica queste regole.",
   "routing_overlap": "La regola più specifica prevale su quella più ampia.",
   "routing_duplicate": "I duplicati verranno uniti al salvataggio.",
-  "routing_ads": "Ads · pubblicità e tracciamento",
+  "routing_ads": "pubblicità e tracciamento",
   "routing_ads_ready": "I dati Ads sono disponibili.",
   "routing_ads_unavailable":
       "Dati Ads non disponibili. Connessioni e regole personalizzate restano disponibili.",

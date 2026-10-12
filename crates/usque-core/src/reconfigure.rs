@@ -33,8 +33,11 @@ pub fn classify_reconfigure(previous: &Profile, next: &Profile) -> ReconfigureCl
     let mut runtime_next = next.clone();
     runtime_next.congestion_control = previous.congestion_control;
     runtime_next.disable_quic = previous.disable_quic;
+    runtime_next.routing.ads_enabled = previous.routing.ads_enabled;
     if previous == &runtime_next {
-        return if previous.disable_quic != next.disable_quic {
+        return if previous.disable_quic != next.disable_quic
+            || previous.routing.ads_enabled != next.routing.ads_enabled
+        {
             ReconfigureClass::HotTrafficPolicy
         } else {
             ReconfigureClass::PersistOnly
@@ -66,7 +69,7 @@ pub fn classify_reconfigure(previous: &Profile, next: &Profile) -> ReconfigureCl
         || previous.split_exclusions != next.split_exclusions
         || previous.kill_switch != next.kill_switch
         || previous.bypass_domains != next.bypass_domains
-        || previous.routing != next.routing
+        || previous.routing.rules != next.routing.rules
         || previous.geo_direct_countries != next.geo_direct_countries
         || previous.direct_dns != next.direct_dns
         || previous.warp_dns != next.warp_dns
@@ -176,6 +179,31 @@ mod tests {
         assert_eq!(
             classify_reconfigure(&previous, &next),
             ReconfigureClass::HotFrontends
+        );
+    }
+
+    #[test]
+    fn ads_switch_is_hot_but_custom_route_edits_keep_their_existing_plan() {
+        let previous = base();
+        let mut next = previous.clone();
+        next.routing.ads_enabled = true;
+        assert_eq!(
+            classify_reconfigure(&previous, &next),
+            ReconfigureClass::HotTrafficPolicy
+        );
+        assert_eq!(
+            classify_reconfigure(&next, &previous),
+            ReconfigureClass::HotTrafficPolicy
+        );
+        next.routing.rules.push(crate::RoutingRule {
+            id: uuid::Uuid::new_v4(),
+            kind: crate::RoutingMatch::Domain,
+            target: "example.test".into(),
+            action: crate::RoutingAction::Direct,
+        });
+        assert_eq!(
+            classify_reconfigure(&previous, &next),
+            ReconfigureClass::ColdReconnect
         );
     }
 

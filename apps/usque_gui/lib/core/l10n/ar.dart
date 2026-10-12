@@ -645,7 +645,7 @@ const Map<String, String> kArCatalog = <String, String>{
   "routing_conflict": "إجراءات مختلفة للهدف نفسه. عدّل هذه القواعد.",
   "routing_overlap": "تتقدم القاعدة الأكثر تحديدًا على القاعدة الأوسع.",
   "routing_duplicate": "تُدمج القواعد المكررة عند الحفظ.",
-  "routing_ads": "Ads · الإعلانات والتتبع",
+  "routing_ads": "الإعلانات والتتبع",
   "routing_ads_ready": "بيانات Ads جاهزة.",
   "routing_ads_unavailable":
       "بيانات Ads غير متاحة. تظل الاتصالات والقواعد المخصصة متاحة.",

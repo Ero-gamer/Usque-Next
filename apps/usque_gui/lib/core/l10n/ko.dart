@@ -611,7 +611,7 @@ const Map<String, String> kKoCatalog = <String, String>{
   "routing_conflict": "같은 대상에 서로 다른 동작이 있습니다. 규칙을 수정하세요.",
   "routing_overlap": "더 구체적인 규칙이 넓은 범위의 규칙보다 우선합니다.",
   "routing_duplicate": "중복 규칙은 저장할 때 병합됩니다.",
-  "routing_ads": "Ads · 광고 및 추적 차단",
+  "routing_ads": "광고 및 추적 차단",
   "routing_ads_ready": "Ads 데이터를 사용할 수 있습니다.",
   "routing_ads_unavailable": "Ads 데이터를 사용할 수 없습니다. 연결과 사용자 규칙은 계속 사용할 수 있습니다.",
   "routing_pending": "다운로드한 규칙은 다시 연결한 후 적용됩니다.",

@@ -658,7 +658,7 @@ const Map<String, String> kViCatalog = <String, String>{
       "Cùng một đích có hành động khác nhau. Hãy sửa các quy tắc.",
   "routing_overlap": "Quy tắc cụ thể hơn ghi đè quy tắc rộng hơn.",
   "routing_duplicate": "Quy tắc trùng lặp sẽ được gộp khi lưu.",
-  "routing_ads": "Ads · quảng cáo và theo dõi",
+  "routing_ads": "quảng cáo và theo dõi",
   "routing_ads_ready": "Dữ liệu Ads đã sẵn sàng.",
   "routing_ads_unavailable":
       "Dữ liệu Ads không khả dụng. Kết nối và quy tắc tùy chỉnh vẫn hoạt động.",

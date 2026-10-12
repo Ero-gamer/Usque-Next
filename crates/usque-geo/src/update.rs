@@ -108,8 +108,22 @@ impl<F: HttpFetch> GeoDownloader<F> {
         }
     }
 
+    /// Ads-only refresh requires the complete category even on first download.
+    pub async fn update_ads(&self) -> ArtifactResult {
+        ArtifactResult {
+            scope: ArtifactScope::Global,
+            kind: ArtifactKind::GeoSite,
+            status: self
+                .update_geosite_inner(true)
+                .await
+                .unwrap_or_else(|error| UpdateStatus::Failed {
+                    reason: error.to_string(),
+                }),
+        }
+    }
+
     pub async fn update_geosite(&self) -> ArtifactResult {
-        match self.update_geosite_inner().await {
+        match self.update_geosite_inner(false).await {
             Ok(status) => ArtifactResult {
                 scope: ArtifactScope::Global,
                 kind: ArtifactKind::GeoSite,
@@ -143,13 +157,16 @@ impl<F: HttpFetch> GeoDownloader<F> {
         Ok(UpdateStatus::Updated)
     }
 
-    async fn update_geosite_inner(&self) -> Result<UpdateStatus, GeoError> {
+    async fn update_geosite_inner(&self, require_ads: bool) -> Result<UpdateStatus, GeoError> {
         let expected = self.fetch_geosite_digest().await?;
         let path = global_geosite_cache_path(&self.cache_dir);
         if let Ok(existing) = std::fs::read(&path)
             && sha256_digest(&existing) == expected
         {
             GeoSiteSet::validate_v2ray_dat(&existing)?;
+            if require_ads {
+                crate::AdsRules::parse(&existing)?;
+            }
             return Ok(UpdateStatus::UpToDate);
         }
         let bytes = self.fetch_geosite_dat().await?;
@@ -157,6 +174,9 @@ impl<F: HttpFetch> GeoDownloader<F> {
             return Err(GeoError::ChecksumMismatch);
         }
         GeoSiteSet::validate_v2ray_dat(&bytes)?;
+        if require_ads {
+            crate::AdsRules::parse(&bytes)?;
+        }
         if let Ok(previous) = std::fs::read(&path) {
             crate::ads::retain_valid_ads(&self.cache_dir, &previous)?;
         }
@@ -308,7 +328,7 @@ mod tests {
             crate::ads::retain_valid_ads(dir.path(), &old).unwrap();
             let downloader = GeoDownloader::new(AdsFetch(ads_catalogue("new.test")), dir.path());
             let failed = if automatic {
-                downloader.update_geosite_inner().await.is_err()
+                downloader.update_geosite_inner(false).await.is_err()
             } else {
                 downloader.download_geosite().await.is_err()
             };
@@ -321,6 +341,37 @@ mod tests {
                 old
             );
         }
+    }
+
+    #[tokio::test]
+    async fn ads_only_update_rejects_incomplete_first_catalog_and_preserves_good_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = crate::proto::GeoSiteList {
+            entry: vec![crate::proto::GeoSite {
+                country_code: "cn".into(),
+                domain: vec![],
+            }],
+        }
+        .encode_to_vec();
+        let bad = GeoDownloader::new(AdsFetch(missing), dir.path());
+        assert!(matches!(
+            bad.update_ads().await.status,
+            UpdateStatus::Failed { .. }
+        ));
+        assert!(!global_geosite_cache_path(dir.path()).exists());
+        let good = GeoDownloader::new(AdsFetch(ads_catalogue("ads.test")), dir.path());
+        assert_eq!(good.update_ads().await.status, UpdateStatus::Updated);
+        assert_eq!(good.update_ads().await.status, UpdateStatus::UpToDate);
+        assert!(matches!(
+            bad.update_ads().await.status,
+            UpdateStatus::Failed { .. }
+        ));
+        assert!(
+            crate::AdsRules::load(dir.path())
+                .unwrap()
+                .contains("ads.test")
+        );
+        assert!(!dir.path().join("geo/geoip").exists());
     }
 
     use super::parse_sha256sum;

@@ -673,7 +673,7 @@ const Map<String, String> kPlCatalog = <String, String>{
   "routing_conflict": "Różne działania dla tego samego celu. Popraw te reguły.",
   "routing_overlap": "Dokładniejsza reguła zastępuje szerszą.",
   "routing_duplicate": "Duplikaty zostaną połączone przy zapisie.",
-  "routing_ads": "Ads · reklamy i śledzenie",
+  "routing_ads": "reklamy i śledzenie",
   "routing_ads_ready": "Dane Ads są dostępne.",
   "routing_ads_unavailable":
       "Dane Ads są niedostępne. Połączenia i własne reguły nadal działają.",

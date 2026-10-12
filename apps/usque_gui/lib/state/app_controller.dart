@@ -54,7 +54,9 @@ class AppController extends ChangeNotifier {
     UpdateDownloader? updateDownloader,
     NetworkQualityController? qualityController,
     @visibleForTesting this.onboardingCompletionWriter,
-  }) : _engine = engine,
+    DateTime Function()? adsClock,
+  }) : _adsClock = adsClock ?? DateTime.now,
+       _engine = engine,
        _updateDownloader = updateDownloader ?? UpdateDownloader(engine),
        diagnostics = DiagnosticsController(engine),
        quality = qualityController ?? NetworkQualityController(engine),
@@ -234,7 +236,9 @@ class AppController extends ChangeNotifier {
   EngineSnapshot get snapshot => _snapshot;
   set snapshot(EngineSnapshot value) {
     _snapshotRevision++;
+    final becameConnected = !_snapshot.isConnected && value.isConnected;
     _snapshot = value;
+    if (becameConnected && initialized) unawaited(maintainAdsRules());
     if (value.phase == ConnectionPhase.error &&
         (value.errorCode != null || value.warning?.isNotEmpty == true)) {
       lastError = userFacingFailure(
@@ -282,6 +286,20 @@ class AppController extends ChangeNotifier {
   GeoRulesList geoRules = const GeoRulesList();
   GeoRulesProgress? geoProgress;
   bool _geoOperationActive = false;
+  bool get geoOperationActive => _geoOperationActive;
+  Completer<void>? _geoIdle;
+  final DateTime Function() _adsClock;
+  Future<bool>? _adsWork;
+  Timer? _adsTimer;
+  bool adsRulesBusy = false;
+  bool adsRulesFailed = false;
+  DateTime? get adsLastChecked {
+    final value = _preferences?.getInt('ads_last_checked');
+    return value == null ? null : DateTime.fromMillisecondsSinceEpoch(value);
+  }
+
+  bool get supportsLiveAds =>
+      _engine is AdsRulesClient && (engineCapabilities?.liveAdsRules ?? false);
   List<UsqueProfile> profiles = <UsqueProfile>[UsqueProfile.defaultProfile()];
   String activeProfileId = UsqueProfile.defaultProfileId;
   Map<String, ProfileIdentityState> profileIdentityStates =
@@ -439,6 +457,7 @@ class AppController extends ChangeNotifier {
     _bootstrapGeneration++;
     _preferences = await SharedPreferences.getInstance();
     if (_disposed || dataGeneration != _dataGeneration) return;
+    adsRulesFailed = _preferences?.getBool('ads_check_failed') ?? false;
     onboardingComplete = _preferences?.getBool('onboarding_complete') ?? false;
     onboardingTermsAccepted =
         _preferences?.getBool('onboarding_terms_accepted') ?? false;
@@ -556,6 +575,7 @@ class AppController extends ChangeNotifier {
       }
       _bootstrapRetryTimer?.cancel();
       _bootstrapRetryTimer = null;
+      unawaited(maintainAdsRules());
       if (!_startupAutoConnectChecked) {
         _startupAutoConnectChecked = true;
         if (intent == _connectionIntent && _shouldAutoConnectOnStart()) {
@@ -1662,6 +1682,138 @@ class AppController extends ChangeNotifier {
     _notifyListeners();
   }
 
+  /// Automatic maintenance runs only for the confirmed saved preference.
+  /// A timer covers long-running sessions; persisted deadlines cover restarts.
+  Future<void> maintainAdsRules() async {
+    if (_disposed ||
+        _clearing ||
+        !initialized ||
+        !activeProfile.routing.adsEnabled ||
+        !supportsLiveAds) {
+      _adsTimer?.cancel();
+      return;
+    }
+    await updateAdsRules();
+  }
+
+  void _scheduleAdsCheck(Duration delay) {
+    _adsTimer?.cancel();
+    if (_disposed || _clearing || !activeProfile.routing.adsEnabled) return;
+    _adsTimer = Timer(delay, () => unawaited(maintainAdsRules()));
+  }
+
+  Future<bool> updateAdsRules({bool manual = false, bool prepare = false}) {
+    final pending = _adsWork;
+    if (pending != null) return pending;
+    if (_disposed || _clearing || !supportsLiveAds) return Future.value(false);
+    late final Future<bool> work;
+    work = _updateAdsRules(manual: manual, prepare: prepare).whenComplete(() {
+      if (identical(_adsWork, work)) _adsWork = null;
+    });
+    _adsWork = work;
+    return work;
+  }
+
+  Future<bool> _updateAdsRules({
+    required bool manual,
+    required bool prepare,
+  }) async {
+    final generation = _dataGeneration;
+    bool current() => !_disposed && !_clearing && generation == _dataGeneration;
+    final engine = _engine as AdsRulesClient;
+    try {
+      // Country downloads and Ads share an artifact; never issue competing writes.
+      await _geoIdle?.future;
+      if (!current()) return false;
+      if (!manual && !prepare && !activeProfile.routing.adsEnabled) {
+        return false;
+      }
+      final next = await _engine.listGeoRules();
+      if (!current()) return false;
+      geoRules = next;
+      final now = _adsClock();
+      final deadline = _preferences?.getInt('ads_next_check');
+      final due = deadline == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(deadline);
+      if (prepare && next.hasAds) return true;
+      final retrying = _preferences?.getBool('ads_check_failed') ?? false;
+      final interval = retrying
+          ? const Duration(hours: 1)
+          : const Duration(days: 7);
+      if (!manual &&
+          !prepare &&
+          due != null &&
+          due.isAfter(now) &&
+          due.difference(now) <= interval &&
+          (next.hasAds || retrying)) {
+        _scheduleAdsCheck(due.difference(now));
+        return next.hasAds;
+      }
+      adsRulesBusy = true;
+      adsRulesFailed = false;
+      _geoOperationActive = true;
+      _geoIdle = Completer<void>();
+      _notifyListeners();
+      // Persist a retry deadline before I/O, including process interruption.
+      await _preferences?.setBool('ads_check_failed', true);
+      if (!current()) return false;
+      await _preferences?.setInt(
+        'ads_next_check',
+        now.add(const Duration(hours: 1)).millisecondsSinceEpoch,
+      );
+      if (!current()) return false;
+      final results = await engine.updateAdsRules();
+      if (!current()) return false;
+      final refreshed = await _engine.listGeoRules();
+      if (!current()) return false;
+      geoRules = refreshed;
+      final success =
+          refreshed.hasAds &&
+          results.isNotEmpty &&
+          results.every((r) => r.status != GeoRulesUpdateStatus.failed);
+      adsRulesFailed = !success;
+      if (success) {
+        await _preferences?.setBool('ads_check_failed', false);
+        if (!current()) return false;
+        final checked = _adsClock();
+        await _preferences?.setInt(
+          'ads_last_checked',
+          checked.millisecondsSinceEpoch,
+        );
+        if (!current()) return false;
+        await _preferences?.setInt(
+          'ads_next_check',
+          checked.add(const Duration(days: 7)).millisecondsSinceEpoch,
+        );
+      }
+      return success;
+    } on Object {
+      if (current()) adsRulesFailed = true;
+      return false;
+    } finally {
+      if (current()) {
+        if (adsRulesBusy) {
+          _geoOperationActive = false;
+          _geoIdle?.complete();
+          _geoIdle = null;
+          adsRulesBusy = false;
+        }
+        final now = _adsClock();
+        final next = _preferences?.getInt('ads_next_check');
+        final delay = next == null
+            ? const Duration(hours: 1)
+            : DateTime.fromMillisecondsSinceEpoch(next).difference(now);
+        _scheduleAdsCheck(
+          delay.isNegative || delay == Duration.zero
+              ? const Duration(hours: 1)
+              : delay,
+        );
+        _notifyListeners();
+      }
+    }
+  }
+
   Future<void> refreshGeoRules() async {
     final generation = _dataGeneration;
     try {
@@ -1677,10 +1829,12 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> downloadGeoRules(String countryCode) async {
+    if (_geoOperationActive || _adsWork != null) return;
     final generation = _dataGeneration;
     await _run(() async {
       lastNotice = null;
       _geoOperationActive = true;
+      _geoIdle = Completer<void>();
       geoProgress = GeoRulesProgress(currentFile: countryCode, total: 1);
       _notifyListeners();
       try {
@@ -1693,6 +1847,8 @@ class AppController extends ChangeNotifier {
       } finally {
         if (generation == _dataGeneration) {
           _geoOperationActive = false;
+          _geoIdle?.complete();
+          _geoIdle = null;
           geoProgress = null;
         }
       }
@@ -1700,10 +1856,12 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> updateAllGeoRules() async {
+    if (_geoOperationActive || _adsWork != null) return;
     final generation = _dataGeneration;
     await _run(() async {
       lastNotice = null;
       _geoOperationActive = true;
+      _geoIdle = Completer<void>();
       geoProgress = const GeoRulesProgress(total: 1);
       _notifyListeners();
       try {
@@ -1716,6 +1874,8 @@ class AppController extends ChangeNotifier {
       } finally {
         if (generation == _dataGeneration) {
           _geoOperationActive = false;
+          _geoIdle?.complete();
+          _geoIdle = null;
           geoProgress = null;
         }
       }
@@ -1748,6 +1908,12 @@ class AppController extends ChangeNotifier {
   Future<bool> clearAllData() async {
     if (_clearing || _disposed) return false;
     _clearing = true;
+    _adsTimer?.cancel();
+    _adsWork = null;
+    adsRulesBusy = false;
+    _geoOperationActive = false;
+    _geoIdle?.complete();
+    _geoIdle = null;
     busy = true;
     _dataGeneration++;
     _zeroTrustCurrentOwner = null;
@@ -1825,6 +1991,11 @@ class AppController extends ChangeNotifier {
           geoRules = const GeoRulesList();
           geoProgress = null;
           _geoOperationActive = false;
+          _geoIdle?.complete();
+          _geoIdle = null;
+          _adsWork = null;
+          adsRulesBusy = false;
+          adsRulesFailed = false;
           _profilesLoaded = false;
           _profileLoadError = null;
           _initialStatusLoaded = false;
@@ -2367,10 +2538,29 @@ class AppController extends ChangeNotifier {
       _notifyListeners();
       return Future.value(false);
     }
-    return networkSettings.save(
-      updated,
-      changedFields ?? networkSettingsChangedFields(activeProfile, updated),
-    );
+    final fields =
+        changedFields ?? networkSettingsChangedFields(activeProfile, updated);
+    final generation = _dataGeneration;
+    if (fields.contains('routing') &&
+        updated.routing.adsEnabled &&
+        supportsLiveAds) {
+      await updateAdsRules(prepare: true);
+      if (_disposed ||
+          _clearing ||
+          generation != _dataGeneration ||
+          updated.id != activeProfileId) {
+        return false;
+      }
+    }
+    final saved = await networkSettings.save(updated, fields);
+    if (saved && !_disposed && generation == _dataGeneration) {
+      if (activeProfile.routing.adsEnabled) {
+        unawaited(maintainAdsRules());
+      } else {
+        _adsTimer?.cancel();
+      }
+    }
+    return saved;
   }
 
   void setActiveProfile(String id) {
@@ -2678,6 +2868,7 @@ class AppController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _adsTimer?.cancel();
     _zeroTrustCurrentOwner = null;
     _onboardingPollTimer?.cancel();
     _bootstrapGeneration++;

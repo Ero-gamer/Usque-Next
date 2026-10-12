@@ -497,6 +497,7 @@ message Capabilities {
   bool encrypted_warp_dns = 44;
   bool zero_trust_endpoint_editing = 45;
   bool routing_rules = 46;
+  bool live_ads_rules = 47;
 }
 
 message FrontendStatus {
@@ -1144,6 +1145,8 @@ message DownloadGeoRulesRequest {
 
 message UpdateAllGeoRulesRequest {}
 
+message UpdateAdsRulesRequest {}
+
 message GeoRulesEntry {
   string country_code = 1;
   bool has_geoip = 2;
@@ -1270,6 +1273,7 @@ message ControlRequest {
     WarpWireguardRequest warp_wireguard = 48;
     InitialIdentityRequest initial_identity = 49;
     GetInitialIdentityStateRequest get_initial_identity_state = 50;
+    UpdateAdsRulesRequest update_ads_rules = 51;
   }
 }
 

@@ -681,7 +681,7 @@ const Map<String, String> kDeCatalog = <String, String>{
       "Unterschiedliche Aktionen für dasselbe Ziel. Regeln bitte ändern.",
   "routing_overlap": "Die genauere Regel übersteuert die allgemeinere.",
   "routing_duplicate": "Doppelte Regeln werden beim Speichern zusammengeführt.",
-  "routing_ads": "Ads · Werbung und Tracking",
+  "routing_ads": "Werbung und Tracking",
   "routing_ads_ready": "Ads-Daten sind verfügbar.",
   "routing_ads_unavailable":
       "Ads-Daten nicht verfügbar. Verbindungen und eigene Regeln bleiben verfügbar.",

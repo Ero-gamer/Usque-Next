@@ -651,7 +651,7 @@ const Map<String, String> kThCatalog = <String, String>{
       "มีการดำเนินการต่างกันสำหรับเป้าหมายเดียวกัน โปรดแก้ไขกฎเหล่านี้",
   "routing_overlap": "กฎที่เจาะจงกว่ามีผลเหนือกฎที่ครอบคลุมกว้างกว่า",
   "routing_duplicate": "กฎซ้ำจะถูกรวมเมื่อบันทึก",
-  "routing_ads": "Ads · โฆษณาและการติดตาม",
+  "routing_ads": "โฆษณาและการติดตาม",
   "routing_ads_ready": "ข้อมูล Ads พร้อมใช้งาน",
   "routing_ads_unavailable":
       "ข้อมูล Ads ไม่พร้อมใช้งาน การเชื่อมต่อและกฎกำหนดเองยังใช้งานได้",

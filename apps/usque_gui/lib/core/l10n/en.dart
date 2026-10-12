@@ -658,7 +658,7 @@ const Map<String, String> kEnCatalog = <String, String>{
       "Different actions for the same target. Edit these rules.",
   "routing_overlap": "The more specific rule overrides the broader rule.",
   "routing_duplicate": "Duplicate rules will be merged.",
-  "routing_ads": "Ads · advertising and tracking",
+  "routing_ads": "Ad and tracker blocking",
   "routing_ads_ready": "Ads data is ready.",
   "routing_ads_unavailable":
       "Ads unavailable. Connections and custom rules remain available.",

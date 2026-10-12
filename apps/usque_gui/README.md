@@ -59,6 +59,9 @@ Linux/WSL 可运行上述命令预览界面并热重载，切换模拟连接状�
 
 ## Editing and navigation
 
+- Ads downloads missing verified rules when applying its enabled preference. While enabled, the running app checks every seven days, retries failed checks after one hour, and persists deadlines across restarts. The switch and downloaded rules apply to new requests without reconnecting. Status uses the native loaded revision; a first download failure remains visibly inactive with Retry. Rule details holds source, timestamps and manual update. Existing country update actions remain separate.
+- 广告拦截在应用开启设置时自动准备规则，启用期间每 7 天检查、失败后 1 小时重试，期限跨重启保存。开关和规则更新直接用于当前连接的新请求，无需重连；状态按原生实际加载结果显示，首次失败提供重试，手动更新收进规则详情。
+
 - Update checks on Windows and Android request GitHub's latest official release, compare its stable version with the installed version, and retain the 512 KiB response limit. Installable packages still require matching asset and manifest metadata (name, platform, architecture, size and SHA-256). Manual failures distinguish network/timeouts, rate limits, unavailable release information, oversized responses and invalid responses; automatic failures remain silent. Raw backend errors are never displayed.
 - Windows 与 Android 的更新检查只请求 GitHub 最新正式版，比较已安装版本，并保留 512 KiB 响应上限。安装包仍须通过资源与清单的名称、平台、架构、大小及 SHA-256 校验。手动检查会区分网络／超时、限流、信息不可用、响应超限和响应无效；自动检查失败保持静默，界面不显示后端原始错误。
 
@@ -94,7 +97,7 @@ Linux/WSL 可运行上述命令预览界面并热重载，切换模拟连接状�
 - Windows keyboard shortcuts: **Ctrl+1** to **Ctrl+4** select Home, Accounts, Proxy and Settings; **Esc** (outside a text field), **Alt+Left** and the mouse back button leave a subpage through its unapplied-edits prompt; **Ctrl+S** applies the visible apply bar; **F5** refreshes the VPN Gate list and the diagnostics timeline. Shortcuts are inactive while a dialog or popup is open and on Android.
 - Windows 托盘图标带状态圆点，托盘菜单可直接切换虚拟网卡和系统代理；窗口在后台时，持续 5 秒以上的重连、连接错误以及之后的恢复会弹出系统通知。窗口首次居中打开，之后恢复上次的位置、大小与最大化状态。快捷键：Ctrl+1～4 切换页面，Esc／Alt+←／鼠标后退键返回，Ctrl+S 应用修改，F5 刷新。
 
-- **Bypass settings** combines a custom DIRECT/REJECT/PROXY rule list, an independent Ads switch, and country direct presets. The editor supports individual edits and action-scoped bulk paste, highlights conflicting equal targets, and explains more-specific exceptions. It uses the shared apply bar and leave guard. Ads availability and the current session revision are distinct; downloads apply after reconnect. See [routing and Ads](../../docs/ROUTING.md).
+- **Bypass settings** combines a custom DIRECT/REJECT/PROXY rule list, an independent Ads switch, and country direct presets. The editor supports individual edits and action-scoped bulk paste, highlights conflicting equal targets, and explains more-specific exceptions. It uses the shared apply bar and leave guard. Ads availability and the current session revision are distinct; complete verified rules update the running session automatically. See [routing and Ads](../../docs/ROUTING.md).
 
 Home shows a non-dismissible risk banner above the connection controls when the
 selected account has custom Zero Trust IPv4/IPv6 addresses or a still-active ZT

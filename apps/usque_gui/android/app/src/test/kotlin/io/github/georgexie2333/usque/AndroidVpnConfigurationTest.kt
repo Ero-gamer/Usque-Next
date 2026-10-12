@@ -13,6 +13,19 @@ import java.net.InetAddress
 
 class AndroidVpnConfigurationTest {
     @Test
+    fun adsToggleKeepsTunIdentityAndPhysicalDnsRequirements() {
+        val before = AndroidVpnProfile.parse(jsonProfile().toString())
+        val after =
+            AndroidVpnProfile.parse(
+                jsonProfile().put("routing", JSONObject().put("ads_enabled", true)).toString(),
+            )
+        assertTrue(before.splitDnsEnabled)
+        assertTrue(after.splitDnsEnabled)
+        assertTrue(TunIdentity.from(before).sameForReuse(TunIdentity.from(after)))
+        assertEquals(before.requiresPhysicalDns, after.requiresPhysicalDns)
+    }
+
+    @Test
     fun rejectAndAdsNeedSyntheticDnsButNotPhysicalDns() {
         for (action in listOf("reject", "proxy", "direct")) {
             val routing =
@@ -63,7 +76,7 @@ class AndroidVpnConfigurationTest {
                     !TunIdentity.from(encrypted).sameForReuse(TunIdentity.from(encrypted.copy(warpDnsMode = "plain"))),
                 )
                 assertEquals(
-                    false,
+                    true,
                     encrypted.copy(vpnGateEnabled = true, dnsMode = "localConfigured").splitDnsEnabled,
                 )
             }
@@ -186,7 +199,7 @@ class AndroidVpnConfigurationTest {
     }
 
     @Test
-    fun absentNullAndEmptyCustomDomainsKeepSplitDnsDisabled() {
+    fun absentNullAndEmptyCustomDomainsKeepLiveAdsDnsReady() {
         for (source in listOf(
             jsonProfile(),
             jsonProfile().put("bypass_domains", JSONObject.NULL),
@@ -194,7 +207,7 @@ class AndroidVpnConfigurationTest {
         )) {
             val profile = AndroidVpnProfile.parse(source.toString())
             assertTrue(profile.bypassDomains.isEmpty())
-            assertEquals(false, profile.splitDnsEnabled)
+            assertTrue(profile.splitDnsEnabled)
             assertEquals(false, profile.requiresPhysicalDns)
         }
     }
@@ -225,7 +238,7 @@ class AndroidVpnConfigurationTest {
     }
 
     @Test
-    fun customDomainsEnableSplitDnsAndInvalidateTunIdentityWithoutCountries() {
+    fun customDomainsReusePreparedDnsWithoutChangingTunIdentity() {
         val before = AndroidVpnProfile.parse(jsonProfile().toString())
         val after =
             AndroidVpnProfile.parse(
@@ -237,7 +250,7 @@ class AndroidVpnConfigurationTest {
         for (mode in listOf("doh", "dot")) {
             assertEquals(false, after.copy(directDnsMode = mode).requiresPhysicalDns)
         }
-        assertTrue(!TunIdentity.from(before).sameForReuse(TunIdentity.from(after)))
+        assertTrue(TunIdentity.from(before).sameForReuse(TunIdentity.from(after)))
         val shorter = after.copy(bypassDomains = listOf("example.com"))
         assertTrue(TunIdentity.from(shorter).sameForReuse(TunIdentity.from(after)))
     }
@@ -265,7 +278,7 @@ class AndroidVpnConfigurationTest {
         val gate = profile("automatic").copy(vpnGateEnabled = true, allowLan = true)
         assertTrue(gate.splitDnsEnabled)
         assertEquals(false, gate.requiresPhysicalDns)
-        assertEquals(false, gate.copy(dnsMode = "localConfigured").splitDnsEnabled)
+        assertTrue(gate.copy(dnsMode = "localConfigured").splitDnsEnabled)
         assertTrue(gate.copy(dnsMode = "localConfigured", geoDirectCountries = listOf("CN")).splitDnsEnabled)
     }
 

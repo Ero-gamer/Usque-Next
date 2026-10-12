@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import '../models/app_models.dart';
+import 'l10n/ads.dart';
 import 'l10n/catalogs.dart';
 import 'l10n/chain.dart';
 import 'l10n/diagnostics.dart';
@@ -52,6 +53,8 @@ class AppStrings {
   }
 
   String _raw(String key) {
+    final ads = kAdsCatalogs[catalogId] ?? kAdsCatalogs['en']!;
+    if (ads.containsKey(key)) return ads[key]!;
     final updates =
         kUpdateCheckCatalogs[catalogId] ?? kUpdateCheckCatalogs['en']!;
     if (updates.containsKey(key)) return updates[key]!;
@@ -97,7 +100,8 @@ class AppStrings {
 
   @visibleForTesting
   static bool get debugCatalogsAreComplete {
-    if (!_featureTablesComplete(
+    if (!_featureTablesComplete(kAdsCatalogs, kAdsCatalogs['en']!) ||
+        !_featureTablesComplete(
           kDiagnosticsCatalogs,
           kDiagnosticsCatalogs['en']!,
         ) ||

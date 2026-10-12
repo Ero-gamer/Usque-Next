@@ -886,6 +886,10 @@ async fn run_session(
                     let current = tunnel.statistics();
                     let seconds = now.duration_since(last_sample).as_secs_f64().max(0.001);
                     if let Ok(mut snapshot) = status.lock() {
+                        snapshot.ads_rule_revision = tunnel.ads_revision();
+                        if snapshot.warning.as_deref() == Some("ADS_UNAVAILABLE") && (!snapshot.ads_rule_revision.is_empty() || !profile.routing.ads_enabled) {
+                            snapshot.warning = None;
+                        }
                         snapshot.data_plane = Some(tunnel.mode());
                         snapshot.l4 = tunnel.l4_snapshot();
                         snapshot.upload_bytes_per_second =
@@ -1146,6 +1150,7 @@ async fn handle_runtime_command(
                 }
             };
             if code == RECONFIGURE_OK {
+                tunnel.update_ads_enabled(profile.routing.ads_enabled);
                 tunnel.update_traffic_policy(profile.disable_quic);
             }
             let _ = reply.send(code);
@@ -1205,6 +1210,7 @@ async fn handle_runtime_command(
                 let _ = reply.send(START_PLATFORM_FAILURE);
                 return;
             }
+            tunnel.update_ads_enabled(next.routing.ads_enabled);
             tunnel.update_traffic_policy(next.disable_quic);
             *tun = Some(attached);
             *tun_io = Some(io);

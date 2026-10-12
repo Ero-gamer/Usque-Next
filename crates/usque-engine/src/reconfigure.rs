@@ -250,6 +250,9 @@ impl ControlService {
             .ok_or_else(|| {
                 ControlServiceError::InvalidRequest("a connected session is required".into())
             })?;
+        active
+            .runtime
+            .update_ads_enabled(profile.routing.ads_enabled);
         active.runtime.update_traffic_policy(profile.disable_quic)
     }
 

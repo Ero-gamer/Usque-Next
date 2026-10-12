@@ -199,6 +199,10 @@ abstract interface class EngineClient {
   void dispose();
 }
 
+abstract interface class AdsRulesClient {
+  Future<List<GeoRulesUpdateResult>> updateAdsRules();
+}
+
 abstract interface class VpnGateClient {
   Future<VpnGateDirectory> listVpnGate({
     String? countryCode,
@@ -306,7 +310,8 @@ class MethodChannelEngineClient
         ChainProfileClient,
         WarpWireguardClient,
         InitialIdentityClient,
-        OnboardingPermissionsClient {
+        OnboardingPermissionsClient,
+        AdsRulesClient {
   @override
   Future<InitialIdentityState> initializeIdentity(
     UsqueProfile profile, {
@@ -918,6 +923,12 @@ class MethodChannelEngineClient
       'downloadGeoRules',
       <String, Object>{'country_code': countryCode},
     );
+    return _geoRulesUpdateFromMap(result ?? const <Object?, Object?>{});
+  }
+
+  @override
+  Future<List<GeoRulesUpdateResult>> updateAdsRules() async {
+    final result = await _invoke<Map<Object?, Object?>>('updateAdsRules');
     return _geoRulesUpdateFromMap(result ?? const <Object?, Object?>{});
   }
 

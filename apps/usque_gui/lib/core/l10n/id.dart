@@ -661,7 +661,7 @@ const Map<String, String> kIdCatalog = <String, String>{
   "routing_overlap":
       "Aturan lebih spesifik mengesampingkan aturan yang lebih luas.",
   "routing_duplicate": "Aturan duplikat digabungkan saat disimpan.",
-  "routing_ads": "Ads · iklan dan pelacakan",
+  "routing_ads": "iklan dan pelacakan",
   "routing_ads_ready": "Data Ads tersedia.",
   "routing_ads_unavailable":
       "Data Ads tidak tersedia. Koneksi dan aturan khusus tetap tersedia.",

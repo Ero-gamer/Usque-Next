@@ -1769,6 +1769,7 @@ EngineCapabilities _decodeCapabilities(_ProtoReader reader) {
       chainOpenvpnMultiEndpoint = false;
   var customBypass = false;
   var routingRules = false;
+  var liveAdsRules = false;
   var automaticEndpoints = false;
   var vpnGatePoolFavorites = false;
   final congestionAlgorithms = <CongestionControlAlgorithm>[];
@@ -1803,6 +1804,8 @@ EngineCapabilities _decodeCapabilities(_ProtoReader reader) {
         chainOpenvpnUdp = reader.varint(field) != 0;
       case 39:
         chainHttpProxy = reader.varint(field) != 0;
+      case 47:
+        liveAdsRules = reader.varint(field) != 0;
       case 46:
         routingRules = reader.varint(field) != 0;
       case 41:
@@ -1869,6 +1872,7 @@ EngineCapabilities _decodeCapabilities(_ProtoReader reader) {
     chainProxyEncryptedDns: chainProxyEncryptedDns,
     customBypass: customBypass,
     routingRules: routingRules,
+    liveAdsRules: liveAdsRules,
     automaticEndpoints: automaticEndpoints,
     chainOpenvpnMultiEndpoint: chainOpenvpnMultiEndpoint,
     vpnGatePoolFavorites: vpnGatePoolFavorites,

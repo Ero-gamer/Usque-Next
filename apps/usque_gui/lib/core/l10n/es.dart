@@ -681,7 +681,7 @@ const Map<String, String> kEsCatalog = <String, String>{
       "Acciones distintas para el mismo destino. Modifica estas reglas.",
   "routing_overlap": "La regla más específica prevalece sobre la más amplia.",
   "routing_duplicate": "Los duplicados se combinarán al guardar.",
-  "routing_ads": "Ads · anuncios y rastreo",
+  "routing_ads": "anuncios y rastreo",
   "routing_ads_ready": "Los datos de Ads están disponibles.",
   "routing_ads_unavailable":
       "Ads no está disponible. Las conexiones y reglas propias siguen disponibles.",

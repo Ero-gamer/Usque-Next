@@ -48,6 +48,9 @@ pub(crate) struct L4Runtime {
 }
 
 impl L4Runtime {
+    pub(crate) fn ads_policy(&self) -> &GeoDirectPolicy {
+        &self.services.geo_policy
+    }
     pub(crate) fn update_traffic_policy(&self, disable_quic: bool) {
         self.services
             .traffic_policy

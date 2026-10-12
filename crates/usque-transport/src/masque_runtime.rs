@@ -165,6 +165,9 @@ struct BoundFrontends {
 }
 
 impl MasqueRuntime {
+    pub(crate) fn ads_policy(&self) -> &GeoDirectPolicy {
+        &self.stack.geo_policy
+    }
     /// Update all existing application forwarding tasks without replacing flows.
     pub fn update_traffic_policy(&self, disable_quic: bool) {
         self.stack.traffic_policy.set_disable_quic(disable_quic);

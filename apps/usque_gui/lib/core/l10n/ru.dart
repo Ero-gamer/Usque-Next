@@ -667,7 +667,7 @@ const Map<String, String> kRuCatalog = <String, String>{
       "Для одной цели заданы разные действия. Исправьте правила.",
   "routing_overlap": "Более точное правило перекрывает более общее.",
   "routing_duplicate": "Дубликаты будут объединены при сохранении.",
-  "routing_ads": "Ads · реклама и отслеживание",
+  "routing_ads": "реклама и отслеживание",
   "routing_ads_ready": "Данные Ads доступны.",
   "routing_ads_unavailable":
       "Данные Ads недоступны. Подключение и свои правила продолжают работать.",

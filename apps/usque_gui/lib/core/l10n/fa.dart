@@ -659,7 +659,7 @@ const Map<String, String> kFaCatalog = <String, String>{
       "برای یک مقصد عملکردهای متفاوت تعیین شده است. قواعد را اصلاح کنید.",
   "routing_overlap": "قاعده دقیق‌تر جایگزین قاعده گسترده‌تر می‌شود.",
   "routing_duplicate": "قواعد تکراری هنگام ذخیره ادغام می‌شوند.",
-  "routing_ads": "Ads · تبلیغات و ردیابی",
+  "routing_ads": "تبلیغات و ردیابی",
   "routing_ads_ready": "داده‌های Ads آماده است.",
   "routing_ads_unavailable":
       "داده‌های Ads در دسترس نیست. اتصال‌ها و قواعد سفارشی همچنان فعال‌اند.",

@@ -1302,6 +1302,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ads_switch_keeps_session_and_platform_leases() {
+        let (_directory, service) = service();
+        let mut profile = service.config_snapshot().await.active_profile().unwrap();
+        service
+            .install_test_session(profile.clone(), true, 3)
+            .await
+            .unwrap();
+        let generation = service
+            .data_plane
+            .lock()
+            .await
+            .as_ref()
+            .unwrap()
+            .session_generation;
+        for enabled in [true, false, true] {
+            profile.routing.ads_enabled = enabled;
+            service
+                .save_network_settings(request(&profile, &["routing"]))
+                .await
+                .unwrap();
+            let _finished = service.mutation_lock.lock().await;
+            let state = service.network_settings_state().await;
+            assert_eq!(state.apply_status, 3);
+            assert_eq!(
+                state.applied_profile.unwrap().routing.unwrap().ads_enabled,
+                enabled
+            );
+            let active = service.data_plane.lock().await;
+            let active = active.as_ref().unwrap();
+            assert_eq!(active.session_generation, generation);
+            let crate::active_runtime::ActiveRuntime::Harness(harness) = &active.runtime else {
+                panic!("harness")
+            };
+            assert_eq!(
+                (
+                    harness.reconnect_count,
+                    harness.reconfigure_count,
+                    harness.attach_count,
+                    harness.detach_count,
+                    harness.system_proxy_apply_count
+                ),
+                (3, 0, 0, 0, 0)
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn quic_hot_save_keeps_session_listeners_and_platform_leases() {
         let (_directory, service) = service();
         let country = usque_geo::CountryCode::parse("CN").unwrap();

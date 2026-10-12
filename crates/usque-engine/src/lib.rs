@@ -1167,6 +1167,14 @@ impl ControlService {
                 let results = self.download_geo_rules(&request.country_code).await?;
                 Ok(control_response::Payload::GeoRulesUpdate(results))
             }
+            control_request::Payload::UpdateAdsRules(_) => {
+                let results = usque_core::geo_rules::update_ads_rules(&self.geo_downloader()?)
+                    .await
+                    .map_err(ControlServiceError::geo_rules)?;
+                Ok(control_response::Payload::GeoRulesUpdate(
+                    geo_results_to_proto(results),
+                ))
+            }
             control_request::Payload::UpdateAllGeoRules(_) => {
                 let results = self.update_all_geo_rules().await?;
                 Ok(control_response::Payload::GeoRulesUpdate(results))
@@ -1241,6 +1249,10 @@ impl ControlService {
             }
             state.update_reconnect_count(active.runtime.health().reconnect_count());
             state.update_frontends(active.runtime.frontend_statuses(active.frontends));
+            let ads_revision = active.runtime.ads_revision();
+            if !ads_revision.is_empty() || !active.profile.routing.ads_enabled {
+                state.update_ads_revision(ads_revision);
+            }
             let traffic = active.runtime.statistics();
             let now = Instant::now();
             let sample_seconds = now.duration_since(active.last_sample_at).as_secs_f64();
@@ -5249,6 +5261,7 @@ fn current_capabilities() -> v1::Capabilities {
         automatic_endpoints: true,
         zero_trust_endpoint_editing: true,
         routing_rules: cfg!(windows),
+        live_ads_rules: cfg!(windows),
         chain_openvpn_multi_endpoint: cfg!(windows),
         vpn_gate_tcp: true,
         vpn_gate_pool_favorites: true,

@@ -31,7 +31,8 @@ class DesktopEngineClient
         VpnGateClient,
         ChainProfileClient,
         WarpWireguardClient,
-        InitialIdentityClient {
+        InitialIdentityClient,
+        AdsRulesClient {
   @override
   Future<InitialIdentityState> initializeIdentity(
     UsqueProfile profile, {
@@ -747,6 +748,14 @@ class DesktopEngineClient
     return _serialized(() async {
       final payload = ControlPayloadWriter()..string(1, countryCode);
       final response = await _request(34, payload.takeBytes());
+      return response.geoRulesUpdate ?? const <GeoRulesUpdateResult>[];
+    });
+  }
+
+  @override
+  Future<List<GeoRulesUpdateResult>> updateAdsRules() {
+    return _serialized(() async {
+      final response = await _request(51, Uint8List(0));
       return response.geoRulesUpdate ?? const <GeoRulesUpdateResult>[];
     });
   }

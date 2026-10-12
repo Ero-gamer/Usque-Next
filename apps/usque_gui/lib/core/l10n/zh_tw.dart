@@ -582,7 +582,7 @@ const Map<String, String> kZhTwCatalog = <String, String>{
   "routing_conflict": "同一目標設定了不同動作，請修改這些規則。",
   "routing_overlap": "更具體的規則覆蓋範圍較大的規則。",
   "routing_duplicate": "重複規則將在儲存時合併。",
-  "routing_ads": "Ads · 廣告與追蹤阻擋",
+  "routing_ads": "廣告與追蹤阻擋",
   "routing_ads_ready": "Ads 規則庫已就緒。",
   "routing_ads_unavailable": "Ads 規則庫無法使用，連線及自訂規則仍可使用。",
   "routing_pending": "下載的新規則在重新連線後生效。",

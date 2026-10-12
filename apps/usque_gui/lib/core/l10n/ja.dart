@@ -611,7 +611,7 @@ const Map<String, String> kJaCatalog = <String, String>{
   "routing_conflict": "同じ対象に異なる動作があります。ルールを修正してください。",
   "routing_overlap": "具体的なルールが広範囲のルールを上書きします。",
   "routing_duplicate": "重複ルールは保存時に統合されます。",
-  "routing_ads": "Ads · 広告と追跡のブロック",
+  "routing_ads": "広告と追跡のブロック",
   "routing_ads_ready": "Ads データを利用できます。",
   "routing_ads_unavailable": "Ads データを利用できません。接続とカスタムルールは利用できます。",
   "routing_pending": "ダウンロードしたルールは再接続後に適用されます。",

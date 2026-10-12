@@ -58,10 +58,17 @@ a domain DIRECT or PROXY rule.
 
 ## Ads
 
-**Ads · advertising and tracking** is off by default. It uses
-`category-ads-all` from the existing checksummed V2Fly GeoSite catalog. Use the
-page's update action to download/update that catalog. Arbitrary subscription
-URLs are not supported. Exact, suffix, keyword and bounded regular-expression
+**Ad and tracker blocking** is off by default. It uses
+`category-ads-all` from the existing checksummed V2Fly GeoSite catalog. Enable
+it and choose **Apply changes**: missing rules are downloaded and validated
+automatically before saving. A failed first download leaves the preference saved
+but reports blocking inactive, with **Retry** beside the status. While enabled,
+the running app checks on startup, successful connection and its next scheduled
+check, at most once every seven days after success. Failed attempts retry after
+one hour; deadlines survive app restarts. Checks do not wake a closed app.
+**Rule details** contains the source, update/check times and **Update now**.
+Ads maintenance fetches only GeoSite, without refreshing country GeoIP files.
+Arbitrary subscription URLs are not supported. Exact, suffix, keyword and bounded regular-expression
 entries are loaded as one complete category; an unsupported or invalid entry
 does not silently become a partial blocklist.
 The category is maintained in the
@@ -73,9 +80,22 @@ connections are still allowed: the page reports Ads unavailable, while custom
 rules continue to apply. Invalid custom rules prevent applying/starting the
 configuration. Country data keeps its existing validation requirements.
 
-An active session retains its loaded catalog. Downloads affect the next
-connection. The page distinguishes available data from the current connection
-and indicates when its revision differs. Reconnect to use the downloaded rules.
+Ads switches and verified catalog replacements apply to new requests in the
+current session without reconnecting. A session-owned shared matcher swaps only
+complete validated categories and retains its previous good revision on failure.
+The native process observes atomic cache replacements once per second, including
+Android downloads made by the UI process. Its watcher expires with the session.
+The page reports actual runtime activation separately from rule availability.
+Existing established flows and DNS answers already cached by applications are
+not terminated or flushed; this is domain filtering, not retroactive inspection.
+Country presets and custom routing edits retain their existing apply lifecycle.
+
+Windows and Android prepare the internal DNS gateway when the tunnel starts,
+even with Ads disabled, so enabling Ads does not replace the interface or its
+DNS configuration. Queries retain the configured upstream and exit policy;
+this does not add physical DNS queries or network-state mutations on a toggle.
+Downloads retain the existing HTTPS, source allowlist, checksum and size checks.
+No browsing history, domain lists or credentials enter new logs or telemetry.
 
 ## Runtime and compatibility
 
@@ -143,7 +163,15 @@ ULA/链路本地网段自动走受保护的直连路径；关闭后取消自动�
 自定义域名优先于 Ads，Ads 优先于国家直连；实际连接 IP 命中 REJECT 时仍会被拒绝。
 Ads 误拦截可通过自定义域名 DIRECT／PROXY 放行。Ads 默认关闭，复用现有 GeoSite
 广告与跟踪分类；更新失败保留旧库，完全无有效库时警告但允许连接，自定义规则继续生效。
-下载的数据在重连后使用，页面区分可用数据与当前连接状态。
+开启广告拦截并点击 **应用修改** 后，缺少的规则自动下载、校验；首次下载失败会显示尚未生效并提供
+**重试**。启用期间，应用在启动、连接成功及到期时检查，每次成功后间隔 7 天，失败后 1 小时重试；
+关闭应用时不会唤醒检查，检查期限跨重启保存。**规则详情** 提供来源、更新／检查时间和 **立即更新**。
+广告维护只更新 GeoSite，不连带更新国家 GeoIP。
+
+广告开关和规则更新无需重连，完整校验后用于当前连接的新请求；原生进程每秒观察一次规则文件替换，
+失败保留上次有效规则。页面根据运行时状态显示是否生效。已建立的流和应用缓存的 DNS 答案不会被强制
+中断或清空。Windows／Android 在连接建立时准备内部 DNS 通道，因此广告开关无需修改网卡或系统 DNS；
+上游解析及出口选择保持原策略。国家和自定义分流规则继续使用原来的应用流程。
 
 旧 CIDR 和域名会迁移为 DIRECT；CIDR 不再通过系统路由提前绕过引擎。
 直连支持 TCP/UDP，其他协议沿用隧道能力。应用自行使用加密 DNS、系统局域网绕过及

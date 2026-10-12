@@ -2080,6 +2080,7 @@ class EngineCapabilities {
     this.chainProxyEncryptedDns = false,
     this.customBypass = false,
     this.routingRules = false,
+    this.liveAdsRules = false,
     this.automaticEndpoints = false,
     this.zeroTrustEndpointEditing = false,
     this.chainOpenvpnMultiEndpoint = false,
@@ -2111,6 +2112,7 @@ class EngineCapabilities {
         chainProxyEncryptedDns: map['chain_proxy_encrypted_dns'] == true,
         customBypass: map['custom_bypass'] == true,
         routingRules: map['routing_rules'] == true,
+        liveAdsRules: map['live_ads_rules'] == true,
         automaticEndpoints: map['automatic_endpoints'] == true,
         zeroTrustEndpointEditing: map['zero_trust_endpoint_editing'] == true,
         chainOpenvpnMultiEndpoint: map['chain_openvpn_multi_endpoint'] == true,
@@ -2141,6 +2143,7 @@ class EngineCapabilities {
 
   final bool customBypass;
   final bool routingRules;
+  final bool liveAdsRules;
   final bool automaticEndpoints;
   final bool zeroTrustEndpointEditing;
   final bool networkQuality;
@@ -2182,6 +2185,7 @@ class EngineCapabilities {
           chainProxyEncryptedDns == other.chainProxyEncryptedDns &&
           customBypass == other.customBypass &&
           routingRules == other.routingRules &&
+          liveAdsRules == other.liveAdsRules &&
           automaticEndpoints == other.automaticEndpoints &&
           zeroTrustEndpointEditing == other.zeroTrustEndpointEditing &&
           chainOpenvpnMultiEndpoint == other.chainOpenvpnMultiEndpoint &&
@@ -2220,6 +2224,7 @@ class EngineCapabilities {
       chainProxyEncryptedDns,
       customBypass,
       routingRules,
+      liveAdsRules,
       automaticEndpoints,
       zeroTrustEndpointEditing,
     ),

@@ -580,7 +580,7 @@ const Map<String, String> kZhCnCatalog = <String, String>{
   "routing_conflict": "同一目标配置了不同动作，请修改这些规则。",
   "routing_overlap": "更具体的规则覆盖范围更大的规则。",
   "routing_duplicate": "重复规则将在保存时合并。",
-  "routing_ads": "Ads · 广告与跟踪拦截",
+  "routing_ads": "广告与跟踪拦截",
   "routing_ads_ready": "Ads 规则库已就绪。",
   "routing_ads_unavailable": "Ads 规则库不可用，连接和自定义规则仍可使用。",
   "routing_pending": "下载的新规则在重新连接后生效。",

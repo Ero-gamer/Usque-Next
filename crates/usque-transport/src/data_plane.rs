@@ -104,6 +104,12 @@ enum GateFrontend {
     Stream(Box<L4Runtime>),
 }
 impl GateFrontend {
+    fn ads_policy(&self) -> &GeoDirectPolicy {
+        match self {
+            Self::Packet(r) => r.ads_policy(),
+            Self::Stream(r) => r.ads_policy(),
+        }
+    }
     fn update_traffic_policy(&self, disabled: bool) {
         match self {
             Self::Packet(r) => r.update_traffic_policy(disabled),
@@ -213,6 +219,22 @@ impl GateFrontend {
 }
 
 impl DataPlaneRuntime {
+    fn ads_policy(&self) -> &GeoDirectPolicy {
+        if let Some(gate) = &self.gate {
+            gate.frontend.ads_policy()
+        } else {
+            match &self.inner {
+                RuntimeInner::ConnectIp(r) => r.ads_policy(),
+                RuntimeInner::L4(r) => r.ads_policy(),
+            }
+        }
+    }
+    pub fn ads_revision(&self) -> String {
+        self.ads_policy().ads_revision().unwrap_or_default()
+    }
+    pub fn update_ads_enabled(&self, enabled: bool) {
+        self.ads_policy().update_ads_enabled(enabled);
+    }
     /// The authenticated endpoint eligibility is frozen for this outer runtime.
     pub fn endpoint_pool(&self) -> usque_core::EndpointPool {
         self.endpoint_pool
@@ -239,6 +261,7 @@ impl DataPlaneRuntime {
         refresher: Option<Arc<dyn EndpointPinRefresher>>,
         policy: Arc<GeoDirectPolicy>,
     ) -> Result<Self, TransportError> {
+        policy.start_ads_watcher();
         if profile.chain_enabled() {
             // Every caller must supply a validated pinned profile explicitly.
             return Err(TransportError::VpnGate(GateFailure::Configuration));
@@ -282,6 +305,7 @@ impl DataPlaneRuntime {
         policy: Arc<GeoDirectPolicy>,
         gate: VpnGateStart,
     ) -> Result<Self, TransportError> {
+        policy.start_ads_watcher();
         let VpnGateStart {
             selected,
             status,

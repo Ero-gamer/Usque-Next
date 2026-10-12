@@ -373,12 +373,7 @@ impl WindowsVpnRuntime {
             .await?;
         let grant = device.acquire(&self.agent, &capabilities).await?;
         state = self.agent.get_state().await?;
-        let mut plan = tunnel_plan(
-            profile,
-            &identity,
-            &registration_api,
-            profile.needs_domain_routing(),
-        );
+        let mut plan = tunnel_plan(profile, &identity, &registration_api, true);
         plan.vpn_chain = true;
         plan.defer_network_configuration = true;
         let plan = canonical_plan(plan);

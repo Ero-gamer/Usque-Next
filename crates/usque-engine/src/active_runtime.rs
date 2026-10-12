@@ -591,6 +591,25 @@ impl ActiveRuntime {
         }
     }
 
+    pub(crate) fn ads_revision(&self) -> String {
+        match self {
+            Self::Proxy(r) => r.runtime.ads_revision(),
+            #[cfg(windows)]
+            Self::Vpn(r) => r.ads_revision(),
+            #[cfg(test)]
+            Self::Harness(_) => String::new(),
+        }
+    }
+    pub(crate) fn update_ads_enabled(&self, enabled: bool) {
+        match self {
+            Self::Proxy(r) => r.runtime.update_ads_enabled(enabled),
+            #[cfg(windows)]
+            Self::Vpn(r) => r.update_ads_enabled(enabled),
+            #[cfg(test)]
+            Self::Harness(_) => {}
+        }
+    }
+
     pub(crate) fn update_traffic_policy(
         &mut self,
         disable_quic: bool,

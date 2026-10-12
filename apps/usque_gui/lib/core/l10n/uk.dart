@@ -668,7 +668,7 @@ const Map<String, String> kUkCatalog = <String, String>{
   "routing_conflict": "Для однієї цілі задано різні дії. Виправте правила.",
   "routing_overlap": "Точніше правило перекриває загальніше.",
   "routing_duplicate": "Дублікати буде об’єднано під час збереження.",
-  "routing_ads": "Ads · реклама та відстеження",
+  "routing_ads": "реклама та відстеження",
   "routing_ads_ready": "Дані Ads доступні.",
   "routing_ads_unavailable":
       "Дані Ads недоступні. Підключення та власні правила продовжують працювати.",

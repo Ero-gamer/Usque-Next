@@ -22,6 +22,12 @@ pub struct ProxyRuntime {
 }
 
 impl ProxyRuntime {
+    pub fn ads_revision(&self) -> String {
+        self.inner().ads_revision()
+    }
+    pub fn update_ads_enabled(&self, enabled: bool) {
+        self.inner().update_ads_enabled(enabled);
+    }
     pub fn update_traffic_policy(&mut self, disable_quic: bool) {
         self.inner_mut().update_traffic_policy(disable_quic);
     }

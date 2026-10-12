@@ -673,7 +673,7 @@ const Map<String, String> kPtCatalog = <String, String>{
   "routing_overlap":
       "A regra mais específica prevalece sobre a mais abrangente.",
   "routing_duplicate": "Duplicatas serão unidas ao salvar.",
-  "routing_ads": "Ads · anúncios e rastreamento",
+  "routing_ads": "anúncios e rastreamento",
   "routing_ads_ready": "Os dados de Ads estão disponíveis.",
   "routing_ads_unavailable":
       "Ads indisponível. Conexões e regras próprias continuam disponíveis.",

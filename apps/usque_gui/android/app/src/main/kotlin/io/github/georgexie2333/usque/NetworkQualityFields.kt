@@ -144,6 +144,7 @@ internal object NetworkQualityFields {
             "chain_proxy_encrypted_dns",
             "custom_bypass",
             "routing_rules",
+            "live_ads_rules",
             "chain_openvpn_multi_endpoint",
             "application_quic_blocking",
             "account_metadata_mutations",

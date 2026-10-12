@@ -684,7 +684,7 @@ const Map<String, String> kFrCatalog = <String, String>{
       "Actions différentes pour la même cible. Modifiez ces règles.",
   "routing_overlap": "La règle la plus précise prime sur la règle plus large.",
   "routing_duplicate": "Les doublons seront fusionnés à l’enregistrement.",
-  "routing_ads": "Ads · publicités et suivi",
+  "routing_ads": "publicités et suivi",
   "routing_ads_ready": "Les données Ads sont disponibles.",
   "routing_ads_unavailable":
       "Données Ads indisponibles. Les connexions et règles personnalisées restent disponibles.",

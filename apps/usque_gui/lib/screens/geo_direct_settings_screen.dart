@@ -8,6 +8,7 @@ import '../core/iso_countries.dart';
 import '../core/usque_theme.dart';
 import '../models/app_models.dart';
 import '../state/app_controller.dart';
+import '../widgets/ads_rules_section.dart';
 import '../widgets/common.dart';
 import '../widgets/country_flag.dart';
 import '../widgets/routing_rules_editor.dart';
@@ -146,21 +147,6 @@ class _GeoDirectSettingsScreenState extends State<GeoDirectSettingsScreen> {
     builder: (context, _) {
       final controller = widget.controller;
       final strings = controller.strings;
-      final appliedAds =
-          (controller.snapshot.isConnected ||
-              controller.snapshot.isTransitional) &&
-          (controller
-                  .networkSettings
-                  .state
-                  ?.appliedProfile
-                  ?.routing
-                  .adsEnabled ??
-              false);
-      final activeAds = controller.snapshot.adsRuleRevision;
-      final adsPending =
-          appliedAds &&
-          controller.geoRules.hasAds &&
-          activeAds != controller.geoRules.adsRevision;
       String? validationError;
       var errorIds = _backendErrorIds;
       List<RoutingNotice> notices = [];
@@ -235,64 +221,17 @@ class _GeoDirectSettingsScreenState extends State<GeoDirectSettingsScreen> {
                   child: HintText(_issue(notice.key, notice.ids)),
                 ),
               const SizedBox(height: 24),
-              ContentSection(
-                child: RowTileTheme(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      SwitchListTile(
-                        key: const ValueKey('routing-ads'),
-                        contentPadding: EdgeInsets.zero,
-                        secondary: const Icon(LucideIcons.megaphoneOff),
-                        title: Text(strings.get('routing_ads')),
-                        subtitle: Text(
-                          strings.get(
-                            controller.geoRules.hasAds
-                                ? 'routing_ads_ready'
-                                : 'routing_ads_unavailable',
-                          ),
+              AdsRulesSection(
+                controller: controller,
+                enabled: _routing.adsEnabled,
+                onChanged: _customAvailable && !_saving
+                    ? (value) => _edited(
+                        RoutingSettings(
+                          rules: _routing.rules,
+                          adsEnabled: value,
                         ),
-                        value: _routing.adsEnabled,
-                        onChanged: _customAvailable && !_saving
-                            ? (value) => _edited(
-                                RoutingSettings(
-                                  rules: _routing.rules,
-                                  adsEnabled: value,
-                                ),
-                              )
-                            : null,
-                      ),
-                      // Status and the update action sit in the switch's text
-                      // column (20 px icon + 12 px gap).
-                      if (appliedAds)
-                        Padding(
-                          padding: const EdgeInsetsDirectional.only(start: 32),
-                          child: HintText(
-                            "${strings.get('routing_current')}: ${strings.get(activeAds.isEmpty ? 'routing_ads_unavailable' : 'active')}",
-                          ),
-                        ),
-                      if (adsPending)
-                        Padding(
-                          padding: const EdgeInsetsDirectional.only(start: 32),
-                          child: HintText(strings.get('routing_pending')),
-                        ),
-                      Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: Padding(
-                          // TextButton.icon pads its icon by 12 px.
-                          padding: const EdgeInsetsDirectional.only(start: 20),
-                          child: TextButton.icon(
-                            onPressed: controller.geoProgress != null
-                                ? null
-                                : controller.updateAllGeoRules,
-                            icon: const Icon(LucideIcons.refreshCw),
-                            label: Text(strings.get('geo_update_all')),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                      )
+                    : null,
               ),
               const SizedBox(height: 24),
               ContentSection(
@@ -312,7 +251,7 @@ class _GeoDirectSettingsScreenState extends State<GeoDirectSettingsScreen> {
     final controller = widget.controller;
     final strings = controller.strings;
     final progress = controller.geoProgress;
-    final updating = progress != null && progress.total > 0;
+    final updating = controller.geoOperationActive;
     final query = _search.text.trim().toLowerCase();
     final byCode = <String, GeoRulesEntry>{
       for (final entry in controller.geoRules.entries) entry.countryCode: entry,
@@ -353,7 +292,7 @@ class _GeoDirectSettingsScreenState extends State<GeoDirectSettingsScreen> {
               onPressed: updating ? null : controller.updateAllGeoRules,
               icon: const Icon(LucideIcons.refreshCw),
               label: Text(
-                updating
+                updating && progress != null
                     ? strings
                           .get('geo_updating')
                           .replaceAll('{current}', '${progress.completed}')

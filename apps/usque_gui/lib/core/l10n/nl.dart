@@ -672,7 +672,7 @@ const Map<String, String> kNlCatalog = <String, String>{
       "Verschillende acties voor hetzelfde doel. Pas deze regels aan.",
   "routing_overlap": "De specifiekere regel gaat voor de bredere regel.",
   "routing_duplicate": "Dubbele regels worden bij opslaan samengevoegd.",
-  "routing_ads": "Ads · advertenties en tracking",
+  "routing_ads": "advertenties en tracking",
   "routing_ads_ready": "Ads-gegevens zijn beschikbaar.",
   "routing_ads_unavailable":
       "Ads-gegevens ontbreken. Verbindingen en eigen regels blijven beschikbaar.",

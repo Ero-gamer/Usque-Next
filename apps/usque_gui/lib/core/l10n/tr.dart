@@ -667,7 +667,7 @@ const Map<String, String> kTrCatalog = <String, String>{
       "Aynı hedef için farklı işlemler var. Bu kuralları düzenleyin.",
   "routing_overlap": "Daha özel kural, daha geniş kuralın önüne geçer.",
   "routing_duplicate": "Yinelenen kurallar kaydedilirken birleştirilir.",
-  "routing_ads": "Ads · reklam ve izleme",
+  "routing_ads": "reklam ve izleme",
   "routing_ads_ready": "Ads verileri hazır.",
   "routing_ads_unavailable":
       "Ads verileri kullanılamıyor. Bağlantılar ve özel kurallar çalışmaya devam eder.",

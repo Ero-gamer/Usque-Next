@@ -33,12 +33,9 @@ internal data class AndroidVpnProfile(
     val dnsServers: List<InetAddress>
         get() = listOf(dnsIpv4, dnsIpv6)
 
+    // Keep DNS filtering ready so Ads changes never replace the VPN interface.
     val splitDnsEnabled: Boolean
-        get() =
-            (geoDirectCountries.isNotEmpty() || bypassDomains.isNotEmpty() || routingDomainRules) ||
-                (vpnGateEnabled && (dnsMode == "tunnel" || customChain)) ||
-                (dataPlane == "l4_proxy" && !vpnGateEnabled) ||
-                (warpDnsMode != "plain" && !vpnGateEnabled)
+        get() = true
 
     val requiresPhysicalDns: Boolean
         get() =

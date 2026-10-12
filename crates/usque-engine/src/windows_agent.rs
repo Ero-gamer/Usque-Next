@@ -1092,7 +1092,7 @@ impl WindowsVpnRuntime {
         device: &WindowsDeviceOwner,
     ) -> Result<Self, WindowsVpnError> {
         let startup_cancel = gate.cancellation.clone();
-        let geo_enabled = profile.needs_domain_routing();
+        let geo_enabled = true; // Keep DNS filtering ready for live Ads toggles.
         let agent = WindowsAgentClient::production();
         let capabilities = agent.get_capabilities().await?;
         validate_capabilities(&capabilities, profile.kill_switch)?;
@@ -1471,6 +1471,18 @@ impl WindowsVpnRuntime {
         &self.http_listeners
     }
 
+    pub(crate) fn ads_revision(&self) -> String {
+        self.tunnel
+            .as_ref()
+            .map(|t| t.ads_revision())
+            .unwrap_or_default()
+    }
+    pub(crate) fn update_ads_enabled(&self, enabled: bool) {
+        if let Some(tunnel) = &self.tunnel {
+            tunnel.update_ads_enabled(enabled);
+        }
+    }
+
     pub(crate) fn update_traffic_policy(
         &mut self,
         disable_quic: bool,
@@ -1527,7 +1539,7 @@ impl WindowsVpnRuntime {
                         self.operation_id,
                         bootstrap.registration_api.clone(),
                         profile,
-                        profile.needs_domain_routing(),
+                        true,
                     )
                     .await
                     .map_err(|error| TransportError::VpnGate(error.gate_failure()))?,
@@ -1615,7 +1627,7 @@ impl WindowsVpnRuntime {
                 tunnel.assigned_ipv4(),
                 tunnel.assigned_ipv6(),
                 &[],
-                profile.needs_domain_routing(),
+                true,
             );
             plan.assigned_ipv4 = final_values.assigned_ipv4;
             plan.assigned_ipv6 = final_values.assigned_ipv6;
