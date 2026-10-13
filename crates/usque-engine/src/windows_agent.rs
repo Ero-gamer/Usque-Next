@@ -1810,31 +1810,14 @@ impl WindowsVpnRuntime {
             Err(error) => return Err((tunnel, error)),
         };
         let operation_id = Uuid::new_v4();
-        let mut effective = profile.clone();
-        if profile.chain_enabled() {
-            let network = tunnel.network_parameters();
-            effective.mtu = network.mtu;
-            if profile.dns_mode == usque_core::DnsMode::Tunnel || profile.custom_chain().is_some() {
-                effective.dns_servers = network.dns_servers;
-            }
-        }
-        let mut plan = tunnel_plan_from_assignment(
-            &effective,
-            tunnel.assigned_ipv4(),
-            tunnel.assigned_ipv6(),
+        let plan = attached_tunnel_plan(
+            profile,
+            &tunnel.network_parameters(),
+            (tunnel.assigned_ipv4(), tunnel.assigned_ipv6()),
             &registration_api,
-            false,
+            tunnel.endpoint_pool(),
+            tunnel.supports_live_ads(),
         );
-        if effective.endpoint.selection == usque_core::EndpointSelection::Automatic {
-            apply_automatic_observation_policy(
-                &mut plan,
-                &effective,
-                usque_core::AutomaticEndpointPolicy::for_profile(
-                    &effective,
-                    tunnel.endpoint_pool(),
-                ),
-            );
-        }
         let startup_lease = match agent
             .prepare(operation_id, plan, &device_lease, state.journal_generation)
             .await
@@ -2436,6 +2419,41 @@ pub(crate) async fn catalogue_physical_network_permitted() -> bool {
         .get_state()
         .await
         .is_ok_and(|state| state.phase == agent_v1::AgentPhase::Clean as i32)
+}
+
+fn attached_tunnel_plan(
+    profile: &Profile,
+    network: &usque_core::vpngate::FinalNetworkParameters,
+    assigned: (std::net::Ipv4Addr, std::net::Ipv6Addr),
+    registration_api: &[SocketAddr],
+    endpoint_pool: usque_core::EndpointPool,
+    supports_live_ads: bool,
+) -> agent_v1::TunnelPlan {
+    let mut effective = profile.clone();
+    if profile.chain_enabled() {
+        effective.mtu = network.mtu;
+        if profile.dns_mode == usque_core::DnsMode::Tunnel || profile.custom_chain().is_some() {
+            effective.dns_servers.clone_from(&network.dns_servers);
+        }
+    }
+    let mut plan = tunnel_plan_from_assignment(
+        &effective,
+        assigned.0,
+        assigned.1,
+        registration_api,
+        // Live Ads sessions prepare this listener even while Ads is disabled.
+        // Publish it now so a later Ads toggle needs no interface-DNS change.
+        // Direct-domain policies require cold reconnect instead of hot attach.
+        supports_live_ads,
+    );
+    if effective.endpoint.selection == usque_core::EndpointSelection::Automatic {
+        apply_automatic_observation_policy(
+            &mut plan,
+            &effective,
+            usque_core::AutomaticEndpointPolicy::for_profile(&effective, endpoint_pool),
+        );
+    }
+    plan
 }
 
 fn tunnel_plan(
@@ -6699,6 +6717,147 @@ mod tests {
         );
 
         assert_eq!(plan.dns_servers, vec!["1.1.1.1", "2606:4700:4700::1111"]);
+    }
+
+    #[test]
+    fn hot_tunnel_attachment_keeps_dns_ready_for_later_ads_enablement() {
+        use usque_core::network_settings::plan_application;
+        use usque_core::{ConnectionPhase, EndpointSelection, ReconfigureClass};
+
+        for initially_enabled in [false, true] {
+            let cache = tempfile::tempdir().unwrap();
+            let mut proxy = Profile::default();
+            proxy.endpoint.selection = EndpointSelection::Custom;
+            proxy.frontends.tunnel = false;
+            proxy.routing.ads_enabled = initially_enabled;
+            proxy.canonicalize_mode();
+            let policy = GeoDirectPolicy::disabled()
+                .with_custom_rules(&proxy)
+                .unwrap()
+                .with_ads(cache.path());
+            if initially_enabled {
+                let mut disabled = proxy.clone();
+                disabled.routing.ads_enabled = false;
+                let application = plan_application(
+                    Some(&proxy),
+                    &disabled,
+                    &["routing".into()],
+                    ConnectionPhase::Connected,
+                    true,
+                )
+                .unwrap();
+                assert_eq!(application.class, ReconfigureClass::HotTrafficPolicy);
+                proxy = application.target.unwrap();
+                policy.update_ads_enabled(false);
+            }
+            let mut attached = proxy.clone();
+            attached.frontends.tunnel = true;
+            let application = plan_application(
+                Some(&proxy),
+                &attached,
+                &["frontends.tunnel".into()],
+                ConnectionPhase::Connected,
+                true,
+            )
+            .unwrap();
+            assert_eq!(application.class, ReconfigureClass::HotTunnelAttach);
+            let attached = application.target.unwrap();
+            let identity = identity();
+            let network = usque_core::vpngate::FinalNetworkParameters {
+                ipv4: Some(identity.assigned_ipv4),
+                ipv6: Some(identity.assigned_ipv6),
+                mtu: attached.mtu,
+                dns_servers: attached.dns_servers.clone(),
+            };
+            let plan = attached_tunnel_plan(
+                &attached,
+                &network,
+                (identity.assigned_ipv4, identity.assigned_ipv6),
+                &[],
+                identity.endpoint_pool(),
+                policy.supports_live_ads(),
+            );
+            assert!(plan.split_dns);
+            assert_eq!(plan.dns_servers, ["198.18.0.1", "fd00::1"]);
+            assert_eq!(
+                plan.dns_servers,
+                tunnel_plan(&attached, &identity, &[], true).dns_servers
+            );
+
+            let mut enabled = attached.clone();
+            enabled.routing.ads_enabled = true;
+            let application = plan_application(
+                Some(&attached),
+                &enabled,
+                &["routing".into()],
+                ConnectionPhase::Connected,
+                true,
+            )
+            .unwrap();
+            assert_eq!(application.class, ReconfigureClass::HotTrafficPolicy);
+            assert!(application.target.unwrap().routing.ads_enabled);
+        }
+    }
+
+    #[test]
+    fn hot_tunnel_attachment_does_not_invent_an_ads_resolver() {
+        let mut profile = Profile::default();
+        profile.endpoint.selection = usque_core::EndpointSelection::Custom;
+        let identity = identity();
+        let network = usque_core::vpngate::FinalNetworkParameters {
+            ipv4: Some(identity.assigned_ipv4),
+            ipv6: None,
+            mtu: profile.mtu,
+            dns_servers: profile.dns_servers.clone(),
+        };
+        let plan = attached_tunnel_plan(
+            &profile,
+            &network,
+            (identity.assigned_ipv4, Ipv6Addr::UNSPECIFIED),
+            &[],
+            identity.endpoint_pool(),
+            GeoDirectPolicy::disabled().supports_live_ads(),
+        );
+        assert!(!plan.split_dns);
+        assert_eq!(plan.dns_servers, ["1.1.1.1", "2606:4700:4700::1111"]);
+    }
+
+    #[test]
+    fn hot_tunnel_plan_keeps_assigned_chain_network_and_automatic_endpoint_policy() {
+        let mut profile = Profile::default();
+        profile.vpn_gate.enabled = true;
+        let network = usque_core::vpngate::FinalNetworkParameters {
+            ipv4: Some("10.8.0.2".parse().unwrap()),
+            ipv6: None,
+            mtu: 1200,
+            dns_servers: vec!["10.8.0.1".parse().unwrap()],
+        };
+        let plan = attached_tunnel_plan(
+            &profile,
+            &network,
+            (network.ipv4.unwrap(), Ipv6Addr::UNSPECIFIED),
+            &[],
+            usque_core::EndpointPool::WarpPlus,
+            false,
+        );
+        assert_eq!(plan.mtu, 1200);
+        assert_eq!(plan.assigned_ipv4, "10.8.0.2/32");
+        assert!(plan.assigned_ipv6.is_empty());
+        assert!(plan.split_dns);
+        assert_eq!(plan.dns_servers, [SPLIT_DNS_IPV4.to_string()]);
+        assert!(plan.automatic_endpoint_policy.is_some());
+
+        profile.dns_mode = usque_core::DnsMode::LocalConfigured;
+        let local = attached_tunnel_plan(
+            &profile,
+            &network,
+            (network.ipv4.unwrap(), Ipv6Addr::UNSPECIFIED),
+            &[],
+            usque_core::EndpointPool::WarpPlus,
+            false,
+        );
+        assert!(!local.split_dns);
+        assert_eq!(local.dns_servers, ["1.1.1.1", "2606:4700:4700::1111"]);
     }
 
     #[test]

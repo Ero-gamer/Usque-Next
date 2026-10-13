@@ -314,9 +314,11 @@ impl DirectGatewayRouter {
                 || (profile.chain_enabled()
                     && (profile.dns_mode == usque_core::DnsMode::Tunnel
                         || profile.custom_chain().is_some())));
-        // Prepare the internal DNS listener even in proxy-only sessions: a
-        // later hot TUN attachment must not advertise a nonexistent resolver.
-        let split_dns_enabled = policy.supports_live_ads()
+        // Prepare Ads DNS for a later hot TUN attachment. Domain-direct proxy
+        // sessions always reconnect before attaching TUN, and their system
+        // resolver need not expose the numeric servers Split DNS requires.
+        let split_dns_enabled = (policy.supports_live_ads()
+            && (profile.frontends.tunnel || !policy.needs_direct_dns()))
             || gate_dns
             || (profile.frontends.tunnel && profile.needs_domain_routing() && policy.is_enabled());
         if profile.frontends.tunnel
@@ -1034,13 +1036,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut profile = Profile::default();
         profile.frontends.tunnel = false;
-        profile.allow_lan = true;
-        let policy = Arc::new(
-            GeoDirectPolicy::disabled()
-                .with_custom_rules(&profile)
-                .unwrap()
-                .with_ads(dir.path()),
-        );
+        profile.endpoint.selection = usque_core::EndpointSelection::Custom;
         let (stack, _pipe) = bounded_piped(proxy_netstack_config(&profile).0);
         let channel = stack.command_channel();
         let task = stack.spawn_tokio();
@@ -1050,32 +1046,164 @@ mod tests {
             .await
             .unwrap();
         let cancel = CancellationToken::new();
-        let (gateway, _) = DirectGatewayRouter::start(
-            &profile,
-            policy.clone(),
-            crate::socket::noop_socket_protector(),
-            Arc::new(TrafficCounters::default()),
-            Some((channel.clone(), addresses)),
-            &cancel,
-        )
-        .await
-        .unwrap();
-        assert!(gateway.split_dns.is_some());
-        assert!(!gateway.protector.tun_direct_available());
-        drop(gateway);
-        profile.frontends.tunnel = true;
-        assert!(
-            DirectGatewayRouter::start(
-                &profile,
-                policy,
-                crate::socket::noop_socket_protector(),
-                Arc::new(TrafficCounters::default()),
-                Some((channel, addresses)),
-                &cancel,
-            )
+        for ads_enabled in [false, true] {
+            for allow_lan in [false, true] {
+                profile.frontends.tunnel = false;
+                profile.routing.ads_enabled = ads_enabled;
+                profile.allow_lan = allow_lan;
+                let policy = Arc::new(
+                    GeoDirectPolicy::disabled()
+                        .with_custom_rules(&profile)
+                        .unwrap()
+                        .with_ads(dir.path()),
+                );
+                let (gateway, _) = DirectGatewayRouter::start(
+                    &profile,
+                    policy.clone(),
+                    crate::socket::noop_socket_protector(),
+                    Arc::new(TrafficCounters::default()),
+                    Some((channel.clone(), addresses)),
+                    &cancel,
+                )
+                .await
+                .unwrap();
+                assert!(gateway.split_dns.is_some());
+                assert!(!gateway.protector.tun_direct_available());
+                let mut without_ads = profile.clone();
+                without_ads.routing.ads_enabled = false;
+                let mut attached = without_ads.clone();
+                attached.frontends.tunnel = true;
+                assert_eq!(
+                    usque_core::classify_reconfigure(&without_ads, &attached),
+                    usque_core::ReconfigureClass::HotTunnelAttach,
+                );
+                // The listener must survive Ads being disabled before a hot
+                // attachment and re-enabled afterward.
+                policy.update_ads_enabled(false);
+                policy.update_ads_enabled(true);
+                assert!(gateway.split_dns.is_some());
+                drop(gateway);
+                profile.frontends.tunnel = true;
+                let result = DirectGatewayRouter::start(
+                    &profile,
+                    policy,
+                    crate::socket::noop_socket_protector(),
+                    Arc::new(TrafficCounters::default()),
+                    Some((channel.clone(), addresses)),
+                    &cancel,
+                )
+                .await;
+                if allow_lan {
+                    assert!(matches!(result, Err(TransportError::Dns(reason))
+                        if reason == "platform cannot safely bypass the TUN for Split DNS"));
+                } else {
+                    let (gateway, _) = result.unwrap();
+                    assert!(gateway.split_dns.is_some());
+                }
+            }
+        }
+        cancel.cancel();
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn proxy_direct_domains_do_not_require_numeric_system_dns_but_tun_does() {
+        let dir = tempfile::tempdir().unwrap();
+        let (stack, _pipe) = bounded_piped(proxy_netstack_config(&Profile::default()).0);
+        let channel = stack.command_channel();
+        let task = stack.spawn_tokio();
+        let addresses = (Ipv4Addr::new(192, 0, 2, 1), "2001:db8::1".parse().unwrap());
+        channel
+            .set_ips([IpAddr::V4(addresses.0), IpAddr::V6(addresses.1)])
             .await
-            .is_err()
-        );
+            .unwrap();
+        let cancel = CancellationToken::new();
+        for ads_enabled in [false, true] {
+            for route in ["bypass", "custom", "country"] {
+                let mut profile = Profile::default();
+                profile.frontends.tunnel = false;
+                profile.endpoint.selection = usque_core::EndpointSelection::Custom;
+                profile.routing.ads_enabled = ads_enabled;
+                let policy = match route {
+                    "bypass" => {
+                        profile.bypass_domains.push("direct.test".into());
+                        GeoDirectPolicy::disabled()
+                    }
+                    "custom" => {
+                        profile.routing.rules.push(usque_core::RoutingRule {
+                            id: uuid::Uuid::new_v4(),
+                            kind: usque_core::RoutingMatch::Domain,
+                            target: "direct.test".into(),
+                            action: usque_core::RoutingAction::Direct,
+                        });
+                        GeoDirectPolicy::disabled()
+                    }
+                    "country" => {
+                        profile.geo_direct_countries.push("CN".into());
+                        GeoDirectPolicy::with_classifier(
+                            Arc::new(LoopbackClassifier),
+                            [CountryCode::parse("CN").unwrap()],
+                        )
+                    }
+                    _ => unreachable!(),
+                };
+                let policy = Arc::new(
+                    policy
+                        .with_custom_rules(&profile)
+                        .unwrap()
+                        .with_ads(dir.path()),
+                );
+                let (gateway, _) = DirectGatewayRouter::start(
+                    &profile,
+                    policy.clone(),
+                    crate::socket::noop_socket_protector(),
+                    Arc::new(TrafficCounters::default()),
+                    Some((channel.clone(), addresses)),
+                    &cancel,
+                )
+                .await
+                .unwrap();
+                assert!(gateway.split_dns.is_none(), "{route}, Ads={ads_enabled}");
+                drop(gateway);
+
+                let mut tunnel_profile = profile.clone();
+                tunnel_profile.frontends.tunnel = true;
+                // Omitting the proxy's unused listener is safe only because
+                // TUN rebuilds its gateway and protected physical DNS path.
+                assert_eq!(
+                    usque_core::classify_reconfigure(&profile, &tunnel_profile),
+                    usque_core::ReconfigureClass::ColdReconnect,
+                );
+                let unprotected = DirectGatewayRouter::start(
+                    &tunnel_profile,
+                    policy.clone(),
+                    crate::socket::noop_socket_protector(),
+                    Arc::new(TrafficCounters::default()),
+                    Some((channel.clone(), addresses)),
+                    &cancel,
+                )
+                .await;
+                assert!(matches!(unprotected, Err(TransportError::Dns(reason))
+                    if reason == "platform cannot safely bypass the TUN for Split DNS"));
+                let protected_without_dns = DirectGatewayRouter::start(
+                    &tunnel_profile,
+                    policy,
+                    Arc::new(TestProtector {
+                        direct_available: true,
+                        reject_protection: false,
+                        protect_calls: AtomicUsize::new(0),
+                    }),
+                    Arc::new(TrafficCounters::default()),
+                    Some((channel.clone(), addresses)),
+                    &cancel,
+                )
+                .await;
+                assert!(
+                    matches!(protected_without_dns, Err(TransportError::Dns(reason))
+                    if reason == "start Split DNS gateway: the selected physical network has no DNS server")
+                );
+            }
+        }
         cancel.cancel();
         task.abort();
     }

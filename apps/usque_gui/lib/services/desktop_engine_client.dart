@@ -922,6 +922,10 @@ Duration requestTimeoutForPayload(int payloadField) {
       return const Duration(seconds: 90);
     case 35:
       return const Duration(seconds: 180);
+    case 51:
+      // Checksum and rules downloads each try up to three 30-second hosts;
+      // allow another 15 seconds for validation, cache commit and IPC reporting.
+      return const Duration(seconds: 195);
     default:
       return const Duration(seconds: 5);
   }

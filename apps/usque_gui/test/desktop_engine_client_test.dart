@@ -846,8 +846,94 @@ void main() {
       },
     );
 
+    for (final seconds in [6, 181]) {
+      testWidgets('Ads download accepts a reply after $seconds seconds', (
+        tester,
+      ) async {
+        final response = Completer<Uint8List>();
+        final requests = <Uint8List>[];
+        final client = DesktopEngineClient.forTest(
+          transport: DesktopEngineTransport.forTest(
+            requestIdFactory: () => 'ads',
+            exchange: (request) {
+              requests.add(request);
+              return response.future;
+            },
+          ),
+        );
+        addTearDown(client.dispose);
+        List<GeoRulesUpdateResult>? result;
+        Object? failure;
+        final download = client.updateAdsRules().then<void>(
+          (value) => result = value,
+          onError: (Object error) => failure = error,
+        );
+        await tester.pump();
+        await tester.pump(Duration(seconds: seconds));
+        expect(failure, isNull);
+        expect(result, isNull);
+        expect(requests, [
+          const ControlCodec().buildRequestFrame(
+            requestId: 'ads',
+            payloadField: 51,
+            payload: Uint8List(0),
+          ),
+        ]);
+        response.complete(_geoRulesUpdateResponse('ads'));
+        await tester.pump();
+        await download;
+        expect(failure, isNull);
+        expect(result, hasLength(1));
+        expect(result!.single.status, GeoRulesUpdateStatus.updated);
+        expect(result!.single.artifactKind, 'geosite');
+        expect(result!.single.artifactScope, 'global');
+      });
+    }
+
+    testWidgets('Ads download deadline is bounded and never replays a mutation', (
+      tester,
+    ) async {
+      var exchanges = 0;
+      final response = Completer<Uint8List>();
+      final client = DesktopEngineClient.forTest(
+        transport: DesktopEngineTransport.forTest(
+          requestIdFactory: () => 'ads',
+          exchange: (_) {
+            exchanges++;
+            return response.future;
+          },
+        ),
+      );
+      addTearDown(client.dispose);
+      List<GeoRulesUpdateResult>? result;
+      Object? failure;
+      final download = client.updateAdsRules().then<void>(
+        (value) => result = value,
+        onError: (Object error) => failure = error,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 194));
+      expect(failure, isNull);
+      expect(result, isNull);
+      await tester.pump(const Duration(seconds: 1));
+      await download;
+      expect(
+        failure,
+        isA<EngineException>().having(
+          (error) => error.code,
+          'code',
+          'ENGINE_REQUEST_TIMEOUT',
+        ),
+      );
+      // A late native completion cannot turn a timed-out mutation into success.
+      response.complete(_geoRulesUpdateResponse('ads'));
+      await tester.pump();
+      expect(result, isNull);
+      expect(exchanges, 1);
+    });
+
     test(
-      'connection deadlines cover automatic selection and legacy rollback',
+      'request deadlines cover native operations and their reporting margin',
       () {
         expect(requestTimeoutForPayload(12), const Duration(seconds: 715));
         expect(requestTimeoutForPayload(14), const Duration(seconds: 715));
@@ -859,6 +945,7 @@ void main() {
         expect(requestTimeoutForPayload(22), const Duration(seconds: 30));
         expect(requestTimeoutForPayload(34), const Duration(seconds: 90));
         expect(requestTimeoutForPayload(35), const Duration(seconds: 180));
+        expect(requestTimeoutForPayload(51), const Duration(seconds: 195));
         expect(requestTimeoutForPayload(10), const Duration(seconds: 5));
         expect(requestTimeoutForPayload(41), const Duration(seconds: 5));
         expect(requestTimeoutForPayload(42), const Duration(seconds: 5));
@@ -1029,6 +1116,20 @@ Uint8List _updateResponse(String requestId) {
     ..string(1, requestId)
     ..message(14, Uint8List(0));
   return codec.frame(payload.takeBytes());
+}
+
+Uint8List _geoRulesUpdateResponse(String requestId) {
+  final result = ControlPayloadWriter()
+    ..enumeration(2, 2)
+    ..string(4, 'geosite')
+    ..string(5, 'global');
+  final results = ControlPayloadWriter()..message(1, result.takeBytes());
+  return const ControlCodec().frame(
+    (ControlPayloadWriter()
+          ..string(1, requestId)
+          ..message(18, results.takeBytes()))
+        .takeBytes(),
+  );
 }
 
 String? utf8RequestIdHint(Uint8List frame) {

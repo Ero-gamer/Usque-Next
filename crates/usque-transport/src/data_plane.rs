@@ -232,6 +232,9 @@ impl DataPlaneRuntime {
     pub fn ads_revision(&self) -> String {
         self.ads_policy().ads_revision().unwrap_or_default()
     }
+    pub fn supports_live_ads(&self) -> bool {
+        self.ads_policy().supports_live_ads()
+    }
     pub fn update_ads_enabled(&self, enabled: bool) {
         self.ads_policy().update_ads_enabled(enabled);
     }
