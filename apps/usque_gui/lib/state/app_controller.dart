@@ -756,15 +756,6 @@ class AppController extends ChangeNotifier {
     _onboardingSubmissionToken = submissionToken;
     try {
       return await _run(() async {
-            await refreshOnboardingPermissions();
-            if (requiresOnboardingPermissions &&
-                onboardingPermissions?.vpnGranted != true) {
-              onboardingStep = 1;
-              throw const EngineException(
-                'VPN_PERMISSION_DENIED',
-                'VPN authorization is required.',
-              );
-            }
             if (_disposed || generation != _dataGeneration || _clearing) return;
             if (!await refreshInitialIdentityState()) return;
             if (initialIdentityState?.phase == InitialIdentityPhase.pending) {
@@ -875,16 +866,6 @@ class AppController extends ChangeNotifier {
             }
             await _refreshProfileCatalog();
             if (_disposed || generation != _dataGeneration || _clearing) return;
-            await refreshOnboardingPermissions();
-            if (_disposed || generation != _dataGeneration || _clearing) return;
-            if (requiresOnboardingPermissions &&
-                onboardingPermissions?.vpnGranted != true) {
-              onboardingStep = 1;
-              throw const EngineException(
-                'VPN_PERMISSION_DENIED',
-                'VPN authorization is required.',
-              );
-            }
             final saved = await _writeOnboardingPreference(
               (preferences) =>
                   onboardingCompletionWriter?.call() ??
@@ -1009,8 +990,7 @@ class AppController extends ChangeNotifier {
           .prepareOnboardingPermissions();
       if (_disposed || generation != _dataGeneration || _clearing) return false;
       onboardingPermissions = state;
-      if (!state.vpnGranted) lastError = strings.get('onboarding_vpn_required');
-      return state.vpnGranted;
+      return true;
     } on Object catch (error) {
       if (_disposed || generation != _dataGeneration || _clearing) return false;
       lastError = userFacingError(strings, error);
@@ -2186,6 +2166,14 @@ class AppController extends ChangeNotifier {
     } catch (error) {
       if (_disposed || generation != _dataGeneration) return false;
       if (connectionIntent != null && connectionIntent != _connectionIntent) {
+        return false;
+      }
+      if (connectionIntent != null &&
+          error is EngineException &&
+          (error.code == 'VPN_PERMISSION_CANCELLED' ||
+              error.code == 'VPN_PERMISSION_DENIED')) {
+        snapshot = const EngineSnapshot(phase: ConnectionPhase.disconnected);
+        lastError = null;
         return false;
       }
       final message = userFacingError(strings, error);

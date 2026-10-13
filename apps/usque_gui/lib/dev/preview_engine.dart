@@ -280,7 +280,6 @@ class PreviewEngine
   @override
   Future<OnboardingPermissionState> getOnboardingPermissions() async =>
       const OnboardingPermissionState(
-        vpnGranted: true,
         notification: OnboardingNotificationPermission.notRequired,
       );
   @override

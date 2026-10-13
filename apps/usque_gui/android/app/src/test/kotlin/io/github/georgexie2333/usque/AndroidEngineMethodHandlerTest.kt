@@ -1840,12 +1840,12 @@ class AndroidEngineMethodHandlerTest {
         var permissionPrepareCount = 0
 
         override fun getOnboardingPermissions(result: MethodChannel.Result) {
-            result.success(mapOf("vpnGranted" to true, "notification" to "notGranted"))
+            result.success(mapOf("notification" to "notGranted"))
         }
 
         override fun prepareOnboardingPermissions(result: MethodChannel.Result) {
             permissionPrepareCount += 1
-            result.success(mapOf("vpnGranted" to true, "notification" to "notGranted"))
+            result.success(mapOf("notification" to "notGranted"))
         }
 
         var cancelCount = 0

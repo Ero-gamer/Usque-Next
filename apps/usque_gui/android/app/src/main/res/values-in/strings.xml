@@ -33,4 +33,6 @@
     <string name="shortcut_profiles">Akun</string>
     <string name="shortcut_long_label">%1$s Usque</string>
     <string name="vpn_notif_ip_unavailable">Terhubung, tetapi %1$s tidak tersedia. Buka Usque untuk detail.</string>
+    <string name="vpn_connect_title">Hubungkan ke Usque?</string>
+    <string name="vpn_connect_body">Menghubungkan ke Usque akan menggantikan VPN lain yang sedang aktif. Koneksi jaringan mungkin terputus sebentar saat beralih.</string>
 </resources>

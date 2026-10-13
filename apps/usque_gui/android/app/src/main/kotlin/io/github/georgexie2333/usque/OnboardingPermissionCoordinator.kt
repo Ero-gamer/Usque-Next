@@ -2,7 +2,7 @@ package io.github.georgexie2333.usque
 
 import io.flutter.plugin.common.MethodChannel
 
-/** Serializes system dialogs; preparing permission never supplies a connection continuation. */
+/** Keeps onboarding notification-only and defers VPN preparation until connection confirmation. */
 internal class OnboardingPermissionCoordinator(
     private val host: Host,
 ) {
@@ -11,12 +11,14 @@ internal class OnboardingPermissionCoordinator(
 
         fun notificationState(): String
 
+        fun launchVpnConfirmation()
+
         fun launchVpn()
 
         fun launchNotification()
     }
 
-    private enum class Dialog { NONE, VPN, NOTIFICATION }
+    private enum class Dialog { NONE, CONFIRMATION, VPN, NOTIFICATION }
 
     private data class Pending(
         val result: MethodChannel.Result,
@@ -28,19 +30,22 @@ internal class OnboardingPermissionCoordinator(
     private var dialog = Dialog.NONE
     private var destroyed = false
 
-    fun outstandingDialog(): String? = dialog.takeIf { it != Dialog.NONE }?.name
+    // Only system dialogs survive Activity recreation. The local confirmation is dismissed.
+    fun outstandingDialog(): String? = dialog.takeIf { it == Dialog.VPN || it == Dialog.NOTIFICATION }?.name
 
     fun restoreOutstandingDialog(value: String?) {
         if (pending == null && dialog == Dialog.NONE) {
-            dialog = Dialog.entries.firstOrNull { it.name == value } ?: Dialog.NONE
+            dialog = Dialog.entries.firstOrNull { it.name == value && (it == Dialog.VPN || it == Dialog.NOTIFICATION) }
+                ?: Dialog.NONE
         }
     }
 
-    fun status(): Map<String, Any> = mapOf("vpnGranted" to host.vpnGranted(), "notification" to notificationState())
+    // VpnService.prepare is not a read-only permission query: it can revoke another VPN.
+    fun status(): Map<String, Any> = mapOf("notification" to notificationState())
 
     private fun notificationState(): String = runCatching { host.notificationState() }.getOrDefault("notGranted")
 
-    fun prepare(result: MethodChannel.Result) = begin(result, true, null)
+    fun prepare(result: MethodChannel.Result) = begin(result, false, null)
 
     fun connect(
         result: MethodChannel.Result,
@@ -63,16 +68,39 @@ internal class OnboardingPermissionCoordinator(
         }
         pending = Pending(result, requireVpn, continuation)
         try {
-            if (requireVpn && !host.vpnGranted()) {
-                dialog = Dialog.VPN
-                host.launchVpn()
-            } else {
+            if (requireVpn) {
+                dialog = Dialog.CONFIRMATION
+                host.launchVpnConfirmation()
+            } else if (continuation == null) {
                 requestNotification()
+            } else {
+                complete()
             }
         } catch (_: Exception) {
             dialog = Dialog.NONE
             val request = pending.also { pending = null }
             request?.result?.error("VPN_PERMISSION_LAUNCH_FAILED", "Android could not request VPN permission.", null)
+        }
+    }
+
+    fun finishConfirmation(confirmed: Boolean) {
+        if (dialog != Dialog.CONFIRMATION || destroyed) return
+        dialog = Dialog.NONE
+        if (pending == null) return
+        if (!confirmed) {
+            cancel("VPN_PERMISSION_CANCELLED", "The VPN connection was cancelled.")
+            return
+        }
+        try {
+            if (host.vpnGranted()) {
+                complete()
+            } else {
+                dialog = Dialog.VPN
+                host.launchVpn()
+            }
+        } catch (_: Exception) {
+            dialog = Dialog.NONE
+            cancel("VPN_PERMISSION_LAUNCH_FAILED", "Android could not request VPN permission.")
         }
     }
 
@@ -84,7 +112,7 @@ internal class OnboardingPermissionCoordinator(
             if (!granted || !host.vpnGranted()) {
                 complete(vpnDenied = true)
             } else {
-                requestNotification()
+                complete()
             }
         } catch (_: Exception) {
             val request = pending.also { pending = null }
@@ -120,11 +148,9 @@ internal class OnboardingPermissionCoordinator(
             return
         }
         try {
-            val value = status().toMutableMap()
-            if (vpnDenied) value["vpnGranted"] = false
             if (request.connect == null) {
-                request.result.success(value)
-            } else if (request.requireVpn && value["vpnGranted"] != true) {
+                request.result.success(status())
+            } else if (request.requireVpn && (vpnDenied || !host.vpnGranted())) {
                 request.result.error("VPN_PERMISSION_DENIED", "VPN permission was not granted.", null)
             } else {
                 request.connect.invoke()

@@ -19,7 +19,6 @@ class _DeniedPermissionsEngine extends FakeEngineClient {
   @override
   Future<OnboardingPermissionState> getOnboardingPermissions() async =>
       const OnboardingPermissionState(
-        vpnGranted: false,
         notification: OnboardingNotificationPermission.notGranted,
       );
 }

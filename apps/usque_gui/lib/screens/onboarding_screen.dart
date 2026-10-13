@@ -65,12 +65,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   void initState() {
     super.initState();
     _step = widget.controller.onboardingStep;
-    if (_step > 1 &&
-        widget.controller.requiresOnboardingPermissions &&
-        widget.controller.onboardingPermissions?.vpnGranted != true) {
-      _step = 1;
-      unawaited(widget.controller.setOnboardingStep(_step));
-    } else if (_step == 3 && !widget.controller.onboardingTermsAccepted) {
+    if (_step == 3 && !widget.controller.onboardingTermsAccepted) {
       _step = 2;
       unawaited(widget.controller.setOnboardingStep(_step));
     }
@@ -191,7 +186,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     if (!widget.controller.requiresOnboardingPermissions) return false;
     final permissions = widget.controller.onboardingPermissions;
     return permissions == null ||
-        !permissions.vpnGranted ||
         permissions.notification ==
             OnboardingNotificationPermission.notRequested;
   }
@@ -251,11 +245,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       ),
       builder: (context, view) {
         var step = view.step;
-        if (step > 1 &&
-            widget.controller.requiresOnboardingPermissions &&
-            view.permissions?.vpnGranted != true) {
-          step = 1;
-        } else if (step == 3 && !view.terms) {
+        if (step == 3 && !view.terms) {
           step = 2;
         }
         if (step != _step) {
@@ -824,17 +814,6 @@ class _PermissionsStep extends StatelessWidget {
         ),
         const SizedBox(height: 22),
         if (controller.requiresOnboardingPermissions) ...[
-          InlineStatus(
-            label: strings.get(
-              controller.onboardingPermissions?.vpnGranted == true
-                  ? 'onboarding_vpn_granted'
-                  : 'onboarding_vpn_required',
-            ),
-            tone: controller.onboardingPermissions?.vpnGranted == true
-                ? StatusTone.success
-                : StatusTone.warning,
-          ),
-          const SizedBox(height: 12),
           InlineStatus(
             label: strings.get(
               switch (controller.onboardingPermissions?.notification) {

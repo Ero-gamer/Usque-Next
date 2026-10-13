@@ -5,9 +5,8 @@ const Map<String, String> kOnboardingEn = <String, String>{
       'The new account\'s license could not be unbound. Reconnect to the Internet and retry cleanup. Account data has not been cleared.',
   'onboarding_zero_trust_privacy': 'Zero Trust privacy policy',
   'onboarding_android_permissions_body':
-      'Android VPN permission is required to finish setup. Notifications are optional. This step does not start a connection. Granting VPN permission may disconnect another active VPN.',
+      'Notifications help keep Usque running in the background by showing a persistent service notification. No other notifications will be sent. You can decline and continue setup.',
   'onboarding_vpn_required': 'VPN permission required',
-  'onboarding_vpn_granted': 'VPN permission granted',
   'onboarding_notifications_optional': 'Notifications are optional',
   'onboarding_notifications_granted': 'Notifications allowed',
   'onboarding_notifications_denied':
@@ -36,9 +35,8 @@ kOnboardingCatalogs = <String, Map<String, String>>{
     'onboarding_cleanup_required': '新账号的许可证未能解绑。请联网后重试清理；账号数据尚未清除。',
     'onboarding_zero_trust_privacy': 'Zero Trust 隐私政策',
     'onboarding_android_permissions_body':
-        '完成设置前需要授予 Android VPN 权限。通知权限可选；此步骤不会启动连接。授予 VPN 权限可能会断开其他正在使用的 VPN。',
+        '通知权限用于显示常驻通知，帮助 Usque 在后台保持运行，不会推送其他通知。你也可以选择不允许并继续设置。',
     'onboarding_vpn_required': '需要 VPN 权限',
-    'onboarding_vpn_granted': '已授予 VPN 权限',
     'onboarding_notifications_optional': '通知权限可选',
     'onboarding_notifications_granted': '已允许通知',
     'onboarding_notifications_denied': '已拒绝通知 · 可以继续设置',
@@ -61,9 +59,8 @@ kOnboardingCatalogs = <String, Map<String, String>>{
     'onboarding_cleanup_required': '新帳戶的授權金鑰未能解除綁定。請連線至互聯網後重試清理；帳戶資料尚未清除。',
     'onboarding_zero_trust_privacy': 'Zero Trust 私隱政策',
     'onboarding_android_permissions_body':
-        '完成設定前需要授予 Android VPN 權限。通知權限可選；此步驟不會啟動連線。授予 VPN 權限可能會中斷其他正在使用的 VPN。',
+        '通知權限用於顯示常駐通知，協助 Usque 在背景持續運作，不會推送其他通知。你亦可選擇不允許並繼續設定。',
     'onboarding_vpn_required': '需要 VPN 權限',
-    'onboarding_vpn_granted': '已授予 VPN 權限',
     'onboarding_notifications_optional': '通知權限可選',
     'onboarding_notifications_granted': '已允許通知',
     'onboarding_notifications_denied': '已拒絕通知 · 可以繼續設定',
@@ -86,9 +83,8 @@ kOnboardingCatalogs = <String, Map<String, String>>{
     'onboarding_cleanup_required': '新帳號的授權金鑰未能解除綁定。請連線至網際網路後重試清理；帳號資料尚未清除。',
     'onboarding_zero_trust_privacy': 'Zero Trust 隱私權政策',
     'onboarding_android_permissions_body':
-        '完成設定前需要授予 Android VPN 權限。通知權限為選用；此步驟不會啟動連線。授予 VPN 權限可能會中斷其他正在使用的 VPN。',
+        '通知權限用於顯示常駐通知，協助 Usque 在背景持續執行，不會推送其他通知。你也可以選擇不允許並繼續設定。',
     'onboarding_vpn_required': '需要 VPN 權限',
-    'onboarding_vpn_granted': '已授予 VPN 權限',
     'onboarding_notifications_optional': '通知權限為選用',
     'onboarding_notifications_granted': '已允許通知',
     'onboarding_notifications_denied': '已拒絕通知 · 可以繼續設定',
@@ -112,9 +108,8 @@ kOnboardingCatalogs = <String, Map<String, String>>{
         '新しいアカウントのライセンスを解除できませんでした。インターネットに接続してから、もう一度削除してください。アカウントのデータはまだ削除されていません。',
     'onboarding_zero_trust_privacy': 'Zero Trust のプライバシーポリシー',
     'onboarding_android_permissions_body':
-        '設定を完了するには Android の VPN 権限が必要です。通知は任意です。この手順で接続は開始されません。VPN 権限を付与すると、使用中の別の VPN が切断される場合があります。',
+        '通知の許可は、常駐通知を表示して Usque のバックグラウンド動作を維持するために使用します。その他の通知は送信しません。許可せずに設定を続けることもできます。',
     'onboarding_vpn_required': 'VPN 権限が必要です',
-    'onboarding_vpn_granted': 'VPN 権限が付与されました',
     'onboarding_notifications_optional': '通知は任意です',
     'onboarding_notifications_granted': '通知が許可されています',
     'onboarding_notifications_denied': '通知は拒否されました · 設定を続行できます',
@@ -138,9 +133,8 @@ kOnboardingCatalogs = <String, Map<String, String>>{
         '새 계정의 라이선스 연결을 해제하지 못했습니다. 인터넷에 연결한 후 정리를 다시 시도하세요. 계정 데이터는 아직 삭제되지 않았습니다.',
     'onboarding_zero_trust_privacy': 'Zero Trust 개인정보 처리방침',
     'onboarding_android_permissions_body':
-        '설정을 완료하려면 Android VPN 권한이 필요합니다. 알림은 선택 사항입니다. 이 단계에서는 연결을 시작하지 않습니다. VPN 권한을 허용하면 사용 중인 다른 VPN이 연결 해제될 수 있습니다.',
+        '알림 권한은 상시 알림을 표시하여 Usque가 백그라운드에서 계속 실행되도록 돕는 데 사용됩니다. 다른 알림은 보내지 않습니다. 허용하지 않고 설정을 계속할 수도 있습니다.',
     'onboarding_vpn_required': 'VPN 권한 필요',
-    'onboarding_vpn_granted': 'VPN 권한 허용됨',
     'onboarding_notifications_optional': '알림은 선택 사항입니다',
     'onboarding_notifications_granted': '알림 허용됨',
     'onboarding_notifications_denied': '알림 거부됨 · 설정을 계속할 수 있습니다',
@@ -165,9 +159,8 @@ kOnboardingCatalogs = <String, Map<String, String>>{
         'No se pudo desvincular la licencia de la cuenta nueva. Conéctate a Internet y vuelve a intentar la limpieza. Los datos de la cuenta aún no se han borrado.',
     'onboarding_zero_trust_privacy': 'Privacidad de Zero Trust',
     'onboarding_android_permissions_body':
-        'Se necesita permiso de VPN de Android para completar la configuración. Las notificaciones son opcionales. Este paso no inicia una conexión. Conceder permiso de VPN puede desconectar otra VPN activa.',
+        'Las notificaciones ayudan a mantener Usque en segundo plano mediante una notificación permanente del servicio. No se enviarán otras notificaciones. Puedes rechazarlas y continuar la configuración.',
     'onboarding_vpn_required': 'Se necesita permiso de VPN',
-    'onboarding_vpn_granted': 'Permiso de VPN concedido',
     'onboarding_notifications_optional': 'Las notificaciones son opcionales',
     'onboarding_notifications_granted': 'Notificaciones permitidas',
     'onboarding_notifications_denied':
@@ -194,9 +187,8 @@ kOnboardingCatalogs = <String, Map<String, String>>{
         'Não foi possível desvincular a licença da nova conta. Conecte-se à Internet e tente a limpeza novamente. Os dados da conta ainda não foram apagados.',
     'onboarding_zero_trust_privacy': 'Privacidade do Zero Trust',
     'onboarding_android_permissions_body':
-        'A permissão de VPN do Android é necessária para concluir a configuração. As notificações são opcionais. Esta etapa não inicia uma conexão. Conceder a permissão de VPN pode desconectar outra VPN ativa.',
+        'As notificações ajudam a manter o Usque em execução em segundo plano com uma notificação permanente do serviço. Nenhuma outra notificação será enviada. Você pode recusar e continuar a configuração.',
     'onboarding_vpn_required': 'Permissão de VPN necessária',
-    'onboarding_vpn_granted': 'Permissão de VPN concedida',
     'onboarding_notifications_optional': 'As notificações são opcionais',
     'onboarding_notifications_granted': 'Notificações permitidas',
     'onboarding_notifications_denied':
@@ -223,9 +215,8 @@ kOnboardingCatalogs = <String, Map<String, String>>{
         'La licence du nouveau compte n’a pas pu être dissociée. Connectez-vous à Internet et réessayez le nettoyage. Les données du compte n’ont pas été effacées.',
     'onboarding_zero_trust_privacy': 'Confidentialité de Zero Trust',
     'onboarding_android_permissions_body':
-        'L’autorisation VPN Android est nécessaire pour terminer la configuration. Les notifications sont facultatives. Cette étape ne démarre aucune connexion. Accorder l’autorisation VPN peut déconnecter un autre VPN actif.',
+        'Les notifications aident Usque à rester actif en arrière-plan grâce à une notification permanente du service. Aucune autre notification ne sera envoyée. Vous pouvez refuser et poursuivre la configuration.',
     'onboarding_vpn_required': 'Autorisation VPN nécessaire',
-    'onboarding_vpn_granted': 'Autorisation VPN accordée',
     'onboarding_notifications_optional': 'Les notifications sont facultatives',
     'onboarding_notifications_granted': 'Notifications autorisées',
     'onboarding_notifications_denied':
@@ -252,9 +243,8 @@ kOnboardingCatalogs = <String, Map<String, String>>{
         'De licentie van het nieuwe account kon niet worden losgekoppeld. Maak verbinding met internet en probeer het opruimen opnieuw. De accountgegevens zijn nog niet gewist.',
     'onboarding_zero_trust_privacy': 'Privacybeleid voor Zero Trust',
     'onboarding_android_permissions_body':
-        'Android-VPN-toestemming is nodig om de installatie af te ronden. Meldingen zijn optioneel. Deze stap start geen verbinding. Het verlenen van VPN-toestemming kan een andere actieve VPN verbreken.',
+        'Meldingen helpen Usque op de achtergrond actief te blijven door een permanente servicemelding te tonen. Er worden geen andere meldingen verstuurd. Je kunt weigeren en doorgaan met instellen.',
     'onboarding_vpn_required': 'VPN-toestemming vereist',
-    'onboarding_vpn_granted': 'VPN-toestemming verleend',
     'onboarding_notifications_optional': 'Meldingen zijn optioneel',
     'onboarding_notifications_granted': 'Meldingen toegestaan',
     'onboarding_notifications_denied': 'Meldingen geweigerd · je kunt doorgaan',
@@ -280,9 +270,8 @@ kOnboardingCatalogs = <String, Map<String, String>>{
         'Yeni hesabın lisansı ayrılamadı. İnternete bağlanıp temizlemeyi yeniden deneyin. Hesap verileri henüz silinmedi.',
     'onboarding_zero_trust_privacy': 'Zero Trust gizlilik politikası',
     'onboarding_android_permissions_body':
-        'Kurulumu tamamlamak için Android VPN izni gerekir. Bildirimler isteğe bağlıdır. Bu adım bağlantı başlatmaz. VPN izni vermek, etkin olan başka bir VPN bağlantısını kesebilir.',
+        'Bildirimler, kalıcı bir hizmet bildirimi göstererek Usque uygulamasının arka planda çalışmasını destekler. Başka bildirim gönderilmez. İzin vermeden kuruluma devam edebilirsiniz.',
     'onboarding_vpn_required': 'VPN izni gerekli',
-    'onboarding_vpn_granted': 'VPN izni verildi',
     'onboarding_notifications_optional': 'Bildirimler isteğe bağlıdır',
     'onboarding_notifications_granted': 'Bildirimlere izin verildi',
     'onboarding_notifications_denied':
@@ -309,9 +298,8 @@ kOnboardingCatalogs = <String, Map<String, String>>{
         'Не удалось отвязать лицензию нового аккаунта. Подключитесь к Интернету и повторите очистку. Данные аккаунта ещё не удалены.',
     'onboarding_zero_trust_privacy': 'Конфиденциальность Zero Trust',
     'onboarding_android_permissions_body':
-        'Для завершения настройки требуется разрешение Android на VPN. Уведомления необязательны. На этом этапе соединение не запускается. Предоставление разрешения на VPN может отключить другой активный VPN.',
+        'Разрешение на уведомления используется для постоянного уведомления службы, помогающего Usque работать в фоне. Другие уведомления отправляться не будут. Можно отказаться и продолжить настройку.',
     'onboarding_vpn_required': 'Требуется разрешение на VPN',
-    'onboarding_vpn_granted': 'Разрешение на VPN получено',
     'onboarding_notifications_optional': 'Уведомления необязательны',
     'onboarding_notifications_granted': 'Уведомления разрешены',
     'onboarding_notifications_denied':
@@ -338,9 +326,8 @@ kOnboardingCatalogs = <String, Map<String, String>>{
         'مجوز حساب جدید جدا نشد. به اینترنت وصل شوید و پاک‌سازی را دوباره انجام دهید. داده‌های حساب هنوز پاک نشده‌اند.',
     'onboarding_zero_trust_privacy': 'سیاست حریم خصوصی Zero Trust',
     'onboarding_android_permissions_body':
-        'برای تکمیل راه‌اندازی، مجوز VPN اندروید لازم است. اعلان‌ها اختیاری هستند. این مرحله اتصال را آغاز نمی‌کند. دادن مجوز VPN ممکن است اتصال VPN فعال دیگری را قطع کند.',
+        'اجازهٔ اعلان برای نمایش اعلان دائمی سرویس و کمک به اجرای Usque در پس‌زمینه استفاده می‌شود. هیچ اعلان دیگری ارسال نمی‌شود. می‌توانید اجازه ندهید و راه‌اندازی را ادامه دهید.',
     'onboarding_vpn_required': 'مجوز VPN لازم است',
-    'onboarding_vpn_granted': 'مجوز VPN داده شد',
     'onboarding_notifications_optional': 'اعلان‌ها اختیاری هستند',
     'onboarding_notifications_granted': 'اعلان‌ها مجاز هستند',
     'onboarding_notifications_denied':
@@ -367,9 +354,8 @@ kOnboardingCatalogs = <String, Map<String, String>>{
         'تعذر إلغاء ربط ترخيص الحساب الجديد. اتصل بالإنترنت وحاول التنظيف مجددًا. لم تُمسح بيانات الحساب بعد.',
     'onboarding_zero_trust_privacy': 'سياسة خصوصية Zero Trust',
     'onboarding_android_permissions_body':
-        'يلزم إذن VPN في Android لإكمال الإعداد. الإشعارات اختيارية. لا تبدأ هذه الخطوة اتصالًا. قد يؤدي منح إذن VPN إلى قطع اتصال VPN آخر نشط.',
+        'يساعد إذن الإشعارات على استمرار تشغيل Usque في الخلفية من خلال إشعار دائم للخدمة. لن تُرسل أي إشعارات أخرى. يمكنك الرفض ومتابعة الإعداد.',
     'onboarding_vpn_required': 'يلزم إذن VPN',
-    'onboarding_vpn_granted': 'تم منح إذن VPN',
     'onboarding_notifications_optional': 'الإشعارات اختيارية',
     'onboarding_notifications_granted': 'الإشعارات مسموحة',
     'onboarding_notifications_denied': 'تم رفض الإشعارات · يمكن متابعة الإعداد',
@@ -393,9 +379,8 @@ kOnboardingCatalogs = <String, Map<String, String>>{
         'Die Lizenz des neuen Kontos konnte nicht getrennt werden. Verbinde dich mit dem Internet und versuche die Bereinigung erneut. Die Kontodaten wurden noch nicht gelöscht.',
     'onboarding_zero_trust_privacy': 'Datenschutz für Zero Trust',
     'onboarding_android_permissions_body':
-        'Zum Abschließen der Einrichtung ist die Android-VPN-Berechtigung nötig. Benachrichtigungen sind optional. Dieser Schritt startet keine Verbindung. Das Erteilen der VPN-Berechtigung kann eine andere aktive VPN-Verbindung trennen.',
+        'Benachrichtigungen helfen Usque durch eine dauerhafte Dienstbenachrichtigung, im Hintergrund aktiv zu bleiben. Es werden keine anderen Benachrichtigungen gesendet. Du kannst ablehnen und die Einrichtung fortsetzen.',
     'onboarding_vpn_required': 'VPN-Berechtigung erforderlich',
-    'onboarding_vpn_granted': 'VPN-Berechtigung erteilt',
     'onboarding_notifications_optional': 'Benachrichtigungen sind optional',
     'onboarding_notifications_granted': 'Benachrichtigungen erlaubt',
     'onboarding_notifications_denied':
@@ -422,9 +407,8 @@ kOnboardingCatalogs = <String, Map<String, String>>{
         'Lisensi akun baru tidak dapat dilepas. Hubungkan ke internet dan coba pembersihan lagi. Data akun belum dihapus.',
     'onboarding_zero_trust_privacy': 'Kebijakan privasi Zero Trust',
     'onboarding_android_permissions_body':
-        'Izin VPN Android diperlukan untuk menyelesaikan penyiapan. Notifikasi bersifat opsional. Langkah ini tidak memulai koneksi. Memberikan izin VPN dapat memutus koneksi VPN lain yang sedang aktif.',
+        'Izin notifikasi digunakan untuk menampilkan notifikasi layanan tetap yang membantu Usque terus berjalan di latar belakang. Tidak ada notifikasi lain yang akan dikirim. Anda dapat menolak dan melanjutkan pengaturan.',
     'onboarding_vpn_required': 'Izin VPN diperlukan',
-    'onboarding_vpn_granted': 'Izin VPN diberikan',
     'onboarding_notifications_optional': 'Notifikasi bersifat opsional',
     'onboarding_notifications_granted': 'Notifikasi diizinkan',
     'onboarding_notifications_denied':
@@ -451,9 +435,8 @@ kOnboardingCatalogs = <String, Map<String, String>>{
         'Non è stato possibile scollegare la licenza del nuovo account. Connettiti a Internet e riprova la pulizia. I dati dell’account non sono stati ancora eliminati.',
     'onboarding_zero_trust_privacy': 'Privacy di Zero Trust',
     'onboarding_android_permissions_body':
-        'Per completare la configurazione serve l’autorizzazione VPN di Android. Le notifiche sono facoltative. Questo passaggio non avvia una connessione. Concedere l’autorizzazione VPN può disconnettere un’altra VPN attiva.',
+        'Le notifiche aiutano Usque a rimanere attivo in background mostrando una notifica permanente del servizio. Non verranno inviate altre notifiche. Puoi rifiutare e continuare la configurazione.',
     'onboarding_vpn_required': 'Autorizzazione VPN necessaria',
-    'onboarding_vpn_granted': 'Autorizzazione VPN concessa',
     'onboarding_notifications_optional': 'Le notifiche sono facoltative',
     'onboarding_notifications_granted': 'Notifiche consentite',
     'onboarding_notifications_denied': 'Notifiche rifiutate · puoi continuare',
@@ -480,9 +463,8 @@ kOnboardingCatalogs = <String, Map<String, String>>{
         'Nie udało się odłączyć licencji nowego konta. Połącz się z internetem i ponów czyszczenie. Dane konta nie zostały jeszcze usunięte.',
     'onboarding_zero_trust_privacy': 'Prywatność Zero Trust',
     'onboarding_android_permissions_body':
-        'Do ukończenia konfiguracji potrzebne jest uprawnienie VPN w Androidzie. Powiadomienia są opcjonalne. Ten krok nie rozpoczyna połączenia. Przyznanie uprawnienia VPN może rozłączyć inny aktywny VPN.',
+        'Uprawnienie do powiadomień służy do wyświetlania stałego powiadomienia usługi, które pomaga Usque działać w tle. Inne powiadomienia nie będą wysyłane. Możesz odmówić i kontynuować konfigurację.',
     'onboarding_vpn_required': 'Wymagane uprawnienie VPN',
-    'onboarding_vpn_granted': 'Uprawnienie VPN przyznane',
     'onboarding_notifications_optional': 'Powiadomienia są opcjonalne',
     'onboarding_notifications_granted': 'Powiadomienia dozwolone',
     'onboarding_notifications_denied':
@@ -509,9 +491,8 @@ kOnboardingCatalogs = <String, Map<String, String>>{
         'ยกเลิกการผูกใบอนุญาตของบัญชีใหม่ไม่ได้ โปรดเชื่อมต่ออินเทอร์เน็ตแล้วลองล้างข้อมูลอีกครั้ง ข้อมูลบัญชียังไม่ได้ถูกลบ',
     'onboarding_zero_trust_privacy': 'นโยบายความเป็นส่วนตัวของ Zero Trust',
     'onboarding_android_permissions_body':
-        'ต้องอนุญาต VPN ของ Android เพื่อเสร็จสิ้นการตั้งค่า การแจ้งเตือนเป็นทางเลือก ขั้นตอนนี้จะไม่เริ่มการเชื่อมต่อ การอนุญาต VPN อาจตัดการเชื่อมต่อ VPN อื่นที่ใช้งานอยู่',
+        'สิทธิ์การแจ้งเตือนใช้เพื่อแสดงการแจ้งเตือนบริการแบบถาวร ซึ่งช่วยให้ Usque ทำงานในเบื้องหลังต่อไป โดยจะไม่ส่งการแจ้งเตือนอื่น คุณสามารถปฏิเสธและตั้งค่าต่อได้',
     'onboarding_vpn_required': 'ต้องอนุญาต VPN',
-    'onboarding_vpn_granted': 'อนุญาต VPN แล้ว',
     'onboarding_notifications_optional': 'การแจ้งเตือนเป็นทางเลือก',
     'onboarding_notifications_granted': 'อนุญาตการแจ้งเตือนแล้ว',
     'onboarding_notifications_denied': 'ปฏิเสธการแจ้งเตือน · ตั้งค่าต่อได้',
@@ -537,9 +518,8 @@ kOnboardingCatalogs = <String, Map<String, String>>{
         'Не вдалося відв’язати ліцензію нового облікового запису. Під’єднайтеся до Інтернету та повторіть очищення. Дані облікового запису ще не видалено.',
     'onboarding_zero_trust_privacy': 'Конфіденційність Zero Trust',
     'onboarding_android_permissions_body':
-        'Для завершення налаштування потрібен дозвіл Android на VPN. Сповіщення необов’язкові. Цей крок не запускає з’єднання. Надання дозволу на VPN може від’єднати інший активний VPN.',
+        'Дозвіл на сповіщення використовується для постійного сповіщення служби, яке допомагає Usque працювати у фоні. Інші сповіщення не надсилатимуться. Можна відмовити й продовжити налаштування.',
     'onboarding_vpn_required': 'Потрібен дозвіл на VPN',
-    'onboarding_vpn_granted': 'Дозвіл на VPN надано',
     'onboarding_notifications_optional': 'Сповіщення необов’язкові',
     'onboarding_notifications_granted': 'Сповіщення дозволено',
     'onboarding_notifications_denied':
@@ -567,9 +547,8 @@ kOnboardingCatalogs = <String, Map<String, String>>{
         'Không thể gỡ liên kết giấy phép của tài khoản mới. Hãy kết nối Internet và thử dọn dẹp lại. Dữ liệu tài khoản chưa bị xóa.',
     'onboarding_zero_trust_privacy': 'Chính sách riêng tư Zero Trust',
     'onboarding_android_permissions_body':
-        'Cần cấp quyền VPN Android để hoàn tất thiết lập. Thông báo là tùy chọn. Bước này không bắt đầu kết nối. Cấp quyền VPN có thể ngắt một VPN khác đang hoạt động.',
+        'Quyền thông báo dùng để hiển thị thông báo dịch vụ thường trực, giúp Usque tiếp tục chạy trong nền. Ứng dụng sẽ không gửi thông báo nào khác. Bạn có thể từ chối và tiếp tục thiết lập.',
     'onboarding_vpn_required': 'Cần quyền VPN',
-    'onboarding_vpn_granted': 'Đã cấp quyền VPN',
     'onboarding_notifications_optional': 'Thông báo là tùy chọn',
     'onboarding_notifications_granted': 'Đã cho phép thông báo',
     'onboarding_notifications_denied': 'Đã từ chối thông báo · có thể tiếp tục',

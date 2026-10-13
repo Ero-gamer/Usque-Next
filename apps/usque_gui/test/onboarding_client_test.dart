@@ -136,11 +136,14 @@ void main() {
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
       messenger.setMockMethodCallHandler(channel, (call) async {
         calls.add(call);
-        return {'vpnGranted': true, 'notification': 'notGranted'};
+        return {'notification': 'notGranted'};
       });
       addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
       final client = MethodChannelEngineClient();
-      expect((await client.getOnboardingPermissions()).vpnGranted, isTrue);
+      expect(
+        (await client.getOnboardingPermissions()).notification,
+        OnboardingNotificationPermission.notGranted,
+      );
       expect(
         (await client.prepareOnboardingPermissions()).notification,
         OnboardingNotificationPermission.notGranted,

@@ -52,14 +52,10 @@ enum OnboardingNotificationPermission {
 }
 
 class OnboardingPermissionState {
-  const OnboardingPermissionState({
-    required this.vpnGranted,
-    required this.notification,
-  });
+  const OnboardingPermissionState({required this.notification});
 
   factory OnboardingPermissionState.fromMap(Map<Object?, Object?> value) =>
       OnboardingPermissionState(
-        vpnGranted: value['vpnGranted'] == true,
         notification: switch (value['notification']) {
           'notRequired' => OnboardingNotificationPermission.notRequired,
           'granted' => OnboardingNotificationPermission.granted,
@@ -69,6 +65,5 @@ class OnboardingPermissionState {
         },
       );
 
-  final bool vpnGranted;
   final OnboardingNotificationPermission notification;
 }

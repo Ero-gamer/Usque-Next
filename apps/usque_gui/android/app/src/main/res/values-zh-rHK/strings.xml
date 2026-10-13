@@ -33,4 +33,6 @@
     <string name="shortcut_profiles">帳戶</string>
     <string name="shortcut_long_label">%1$s Usque</string>
     <string name="vpn_notif_ip_unavailable">已連線，但 %1$s 無法使用。請開啟 Usque 查看詳情。</string>
+    <string name="vpn_connect_title">連線至 Usque？</string>
+    <string name="vpn_connect_body">連線至 Usque 會取代目前使用中的其他 VPN，切換期間網絡可能短暫中斷。</string>
 </resources>

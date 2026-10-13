@@ -271,22 +271,24 @@ void main() {
   );
 
   test(
-    'initial registration requires terms and current VPN authorization',
+    'initial registration requires terms but no VPN or notification grant',
     () async {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       final engine = FakeEngineClient()
         ..permissionState = const OnboardingPermissionState(
-          vpnGranted: false,
           notification: OnboardingNotificationPermission.notGranted,
         );
       final app = AppController(engine);
       addTearDown(app.dispose);
       await app.initialize();
       expect(await app.finishOnboarding(), isFalse);
-      await app.setOnboardingTermsAccepted(true);
-      expect(await app.finishOnboarding(), isFalse);
       expect(engine.calls.where((call) => call == 'provision'), isEmpty);
+      await app.setOnboardingTermsAccepted(true);
+      expect(await app.finishOnboarding(), isTrue);
+      expect(engine.calls.where((call) => call == 'provision'), hasLength(1));
+      expect(app.onboardingComplete, isTrue);
+      expect(engine.lastConnectedProfile, isNull);
     },
   );
 

@@ -33,4 +33,6 @@
     <string name="shortcut_profiles">Облікові записи</string>
     <string name="shortcut_long_label">%1$s Usque</string>
     <string name="vpn_notif_ip_unavailable">Підключено, але %1$s недоступний. Відкрийте Usque, щоб переглянути подробиці.</string>
+    <string name="vpn_connect_title">Підключитися до Usque?</string>
+    <string name="vpn_connect_body">Підключення до Usque замінить інший активний VPN. Під час перемикання мережеве з’єднання може ненадовго перерватися.</string>
 </resources>

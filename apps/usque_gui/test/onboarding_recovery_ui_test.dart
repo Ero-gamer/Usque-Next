@@ -8,7 +8,6 @@ import 'package:usque/models/app_models.dart';
 import 'package:usque/models/onboarding_models.dart';
 import 'package:usque/screens/onboarding_screen.dart';
 import 'package:usque/state/app_controller.dart';
-import 'package:usque/widgets/common.dart';
 import 'package:usque/widgets/zero_trust_enrollment_editor.dart';
 
 import 'app_test.dart' show FakeEngineClient;
@@ -100,11 +99,10 @@ void main() {
   );
   for (final granted in [false, true]) {
     testWidgets(
-      'Android setup waits for VPN permission: granted=$granted',
+      'Android setup continues after optional notification permission: granted=$granted',
       (tester) async {
         final engine = _PermissionScenarioEngine()
           ..permissionState = const OnboardingPermissionState(
-            vpnGranted: false,
             notification: OnboardingNotificationPermission.notRequested,
           );
         final app = AppController(engine)
@@ -115,6 +113,11 @@ void main() {
         );
         await tester.pumpAndSettle();
         await _continue(tester);
+        expect(find.textContaining('VPN'), findsNothing);
+        expect(
+          find.textContaining('No other notifications will be sent.'),
+          findsOneWidget,
+        );
         final authorize = find.widgetWithText(
           FilledButton,
           app.strings.get('onboarding_grant_continue'),
@@ -129,25 +132,13 @@ void main() {
         expect(engine.lastConnectedProfile, isNull);
         engine.reply.complete(
           OnboardingPermissionState(
-            vpnGranted: granted,
-            notification: OnboardingNotificationPermission.notGranted,
+            notification: granted
+                ? OnboardingNotificationPermission.granted
+                : OnboardingNotificationPermission.notGranted,
           ),
         );
         await tester.pumpAndSettle();
-        expect(
-          find.text('Cloudflare terms'),
-          granted ? findsOneWidget : findsNothing,
-        );
-        if (!granted) {
-          expect(
-            find.descendant(
-              of: find.byType(InlineStatus),
-              matching: find.text(app.strings.get('onboarding_vpn_required')),
-            ),
-            findsOneWidget,
-          );
-          expect(tester.widget<FilledButton>(authorize).onPressed, isNotNull);
-        }
+        expect(find.text('Cloudflare terms'), findsOneWidget);
         expect(engine.lastConnectedProfile, isNull);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
@@ -157,7 +148,7 @@ void main() {
   }
 
   testWidgets(
-    'revoked Android VPN permission returns to its saved step',
+    'Android notification changes and resume preserve the saved setup step',
     (tester) async {
       final engine = FakeEngineClient();
       final app = AppController(engine)
@@ -172,13 +163,14 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Set up WARP account'), findsOneWidget);
       engine.permissionState = const OnboardingPermissionState(
-        vpnGranted: false,
         notification: OnboardingNotificationPermission.notGranted,
       );
       await app.refreshOnboardingPermissions();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
-      expect(find.text('System permissions'), findsOneWidget);
-      expect(app.onboardingStep, 1);
+      expect(find.text('Set up WARP account'), findsOneWidget);
+      expect(app.onboardingStep, 3);
       expect(app.onboardingTermsAccepted, isTrue);
       expect(engine.provisioned, isFalse);
       await tester.pumpWidget(const SizedBox.shrink());

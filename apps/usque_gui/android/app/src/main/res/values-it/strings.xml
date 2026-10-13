@@ -33,4 +33,6 @@
     <string name="shortcut_profiles">Account</string>
     <string name="shortcut_long_label">%1$s Usque</string>
     <string name="vpn_notif_ip_unavailable">Connesso, ma %1$s non è disponibile. Apri Usque per i dettagli.</string>
+    <string name="vpn_connect_title">Connettersi a Usque?</string>
+    <string name="vpn_connect_body">La connessione a Usque sostituirà qualsiasi altra VPN attiva. La connessione di rete potrebbe interrompersi brevemente durante il passaggio.</string>
 </resources>

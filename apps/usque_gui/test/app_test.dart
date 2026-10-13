@@ -43,7 +43,6 @@ class FakeEngineClient
         OnboardingPermissionsClient {
   InitialIdentityState? initialSetupState;
   OnboardingPermissionState permissionState = const OnboardingPermissionState(
-    vpnGranted: true,
     notification: OnboardingNotificationPermission.notRequired,
   );
 
@@ -3492,6 +3491,36 @@ void main() {
     expect(find.text('IPv6'), findsWidgets);
     expect(find.text('Disconnect'), findsOneWidget);
   });
+
+  for (final code in ['VPN_PERMISSION_CANCELLED', 'VPN_PERMISSION_DENIED']) {
+    testWidgets(
+      'Android VPN cancellation stays on Home and permits another connection: $code',
+      (tester) async {
+        SharedPreferences.setMockInitialValues(<String, Object>{
+          'onboarding_complete': true,
+          'update_checks_enabled': false,
+        });
+        final engine = FakeEngineClient()
+          ..connectError = EngineException(code, 'Cancelled');
+        await tester.pumpWidget(UsqueBootstrap(engine: engine));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Connect'));
+        await tester.pumpAndSettle();
+        expect(find.text('Connect'), findsOneWidget);
+        expect(find.text('Connection error'), findsNothing);
+        expect(find.byType(OnboardingScreen), findsNothing);
+        expect(engine.calls.where((call) => call == 'connect'), hasLength(1));
+        final preferences = await SharedPreferences.getInstance();
+        expect(preferences.getBool('onboarding_complete'), isTrue);
+        engine.connectError = null;
+        await tester.tap(find.text('Connect'));
+        await tester.pumpAndSettle();
+        expect(find.text('Disconnect'), findsOneWidget);
+        expect(engine.calls.where((call) => call == 'connect'), hasLength(2));
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.android),
+    );
+  }
 
   testWidgets('generic connect failure leaves home on error, not preparing', (
     tester,
