@@ -499,6 +499,12 @@ BSSL_NAMESPACE_END
 
 using namespace bssl;
 
+void USQUE_SSL_CTX_set_aes_cipher_preference(SSL_CTX *ctx) {
+  // The existing per-context preference affects TLS cipher ordering and ECH
+  // GREASE AEAD selection, never the crypto implementation's CPU dispatch.
+  bssl::SSL_CTX_set_aes_hw_override_for_testing(ctx, true);
+}
+
 int SSL_library_init(void) {
   CRYPTO_library_init();
   return 1;

@@ -351,6 +351,7 @@ void main() {
         ..engineCapabilities = const EngineCapabilities(
           automaticEndpoints: true,
           h3CongestionControlAlgorithms: CongestionControlAlgorithm.values,
+          tlsFingerprints: TlsFingerprint.values,
         );
       app.sharedNetwork = app.sharedNetwork.copyWith(
         endpointSelection: custom
@@ -1216,8 +1217,10 @@ void main() {
         ..engineCapabilities = const EngineCapabilities(
           automaticEndpoints: true,
           h3CongestionControlAlgorithms: CongestionControlAlgorithm.values,
+          tlsFingerprints: TlsFingerprint.values,
         )
         ..snapshot = const EngineSnapshot(
+          // The TLS profile is also pending until the next connection.
           phase: ConnectionPhase.connected,
           transport: 'h3',
           sessionCongestionControl: CongestionControlAlgorithm.cubic,
@@ -1226,6 +1229,7 @@ void main() {
       app.sharedNetwork = app.sharedNetwork.copyWith(
         allowLan: false,
         congestionControl: CongestionControlAlgorithm.bbr3,
+        tlsFingerprint: TlsFingerprint.chrome131,
       );
       app.networkSettings.accept(
         NetworkSettingsState(
@@ -1236,9 +1240,10 @@ void main() {
           storedProfile: app.activeProfile,
           appliedProfile: app.activeProfile.copyWith(
             congestionControl: CongestionControlAlgorithm.cubic,
+            tlsFingerprint: TlsFingerprint.defaultProfile,
           ),
           status: NetworkSettingsApplyStatus.deferred,
-          deferredFields: const ['congestion_control'],
+          deferredFields: const ['congestion_control', 'tls_fingerprint'],
         ),
       );
       final boundary = GlobalKey();
@@ -1287,6 +1292,7 @@ void main() {
           l4TunTcp: true,
           l4DnsConversion: true,
           h3CongestionControlAlgorithms: CongestionControlAlgorithm.values,
+          tlsFingerprints: TlsFingerprint.values,
         );
       app.sharedNetwork = app.sharedNetwork.copyWith(
         dataPlane: DataPlaneMode.l4Proxy,

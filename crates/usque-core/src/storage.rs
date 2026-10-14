@@ -475,6 +475,10 @@ fn migrate_app_config(config: &mut AppConfig) {
         );
         config.schema_version = 24;
     }
+    if config.schema_version < 25 {
+        config.network.tls_fingerprint = crate::TlsFingerprint::Default;
+        config.schema_version = 25;
+    }
 }
 
 #[cfg(not(windows))]
@@ -548,6 +552,35 @@ pub enum StoreError {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn schema_24_migrates_with_default_fingerprint_and_persists_selection() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("config.json");
+        let config = crate::AppConfig {
+            schema_version: 24,
+            ..Default::default()
+        };
+        let mut json = serde_json::to_value(config).unwrap();
+        json["network"]
+            .as_object_mut()
+            .unwrap()
+            .remove("tls_fingerprint");
+        std::fs::write(&path, serde_json::to_vec(&json).unwrap()).unwrap();
+        let store = super::ConfigStore::new(path);
+        let mut loaded = store.load().unwrap();
+        assert_eq!(loaded.schema_version, CURRENT_SCHEMA_VERSION);
+        assert_eq!(
+            loaded.network.tls_fingerprint,
+            crate::TlsFingerprint::Default
+        );
+        loaded.network.tls_fingerprint = crate::TlsFingerprint::Chrome131;
+        store.save(&loaded).unwrap();
+        assert_eq!(
+            store.load().unwrap().network.tls_fingerprint,
+            crate::TlsFingerprint::Chrome131
+        );
+    }
+
+    #[test]
     fn schema_23_moves_targets_to_stable_shared_routing_rules() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("config.json");
@@ -560,7 +593,7 @@ mod tests {
         std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
         let store = super::ConfigStore::new(path);
         let loaded = store.load().unwrap();
-        assert_eq!(loaded.schema_version, 24);
+        assert_eq!(loaded.schema_version, CURRENT_SCHEMA_VERSION);
         assert!(loaded.network.bypass_domains.is_empty());
         assert!(loaded.network.split_exclusions.is_empty());
         assert_eq!(loaded.network.routing.rules.len(), 2);

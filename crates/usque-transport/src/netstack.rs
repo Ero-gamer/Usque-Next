@@ -1094,6 +1094,12 @@ async fn connect_initial_with_refresh(
     pin_refresher: Option<&Arc<dyn EndpointPinRefresher>>,
     telemetry: &ConnectionTelemetry,
 ) -> Result<(MasqueTunnel, AddressFamily, Arc<MasqueTlsIdentity>, bool), TransportError> {
+    let identity = Arc::new(
+        identity
+            .as_ref()
+            .clone()
+            .with_fingerprint(profile.tls_fingerprint),
+    );
     match connect_with_policy(
         profile,
         identity.as_ref(),
@@ -1129,7 +1135,7 @@ async fn refresh_pin(
     protector: Arc<dyn SocketProtector>,
 ) -> Result<MasqueTlsIdentity, TransportError> {
     let refresh = refresher.refresh(protector);
-    if profile.endpoint.selection == usque_core::EndpointSelection::Automatic {
+    let refreshed = if profile.endpoint.selection == usque_core::EndpointSelection::Automatic {
         timeout(
             usque_core::endpoints::AUTOMATIC_PIN_REFRESH_TIMEOUT,
             refresh,
@@ -1142,7 +1148,8 @@ async fn refresh_pin(
         })?
     } else {
         refresh.await
-    }
+    }?;
+    Ok(refreshed.with_fingerprint(profile.tls_fingerprint))
 }
 
 fn ensure_endpoint_pool_unchanged(
@@ -3434,6 +3441,42 @@ mod tests {
         assert_eq!(started.elapsed(), Duration::from_secs(60));
         assert_eq!(refresher.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
         assert!(stopped.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn pin_refresh_keeps_the_session_fingerprint_for_both_endpoint_policies() {
+        struct Refresher;
+        #[async_trait::async_trait]
+        impl EndpointPinRefresher for Refresher {
+            async fn refresh(
+                &self,
+                _: Arc<dyn SocketProtector>,
+            ) -> Result<MasqueTlsIdentity, TransportError> {
+                // The enrollment has no fingerprint setting; its constructor
+                // defaults must not reset the active profile's choice.
+                Ok(automatic_test_identity())
+            }
+        }
+        let refresher: Arc<dyn EndpointPinRefresher> = Arc::new(Refresher);
+        for selection in [
+            usque_core::EndpointSelection::Automatic,
+            usque_core::EndpointSelection::Custom,
+        ] {
+            for fingerprint in usque_core::TlsFingerprint::ALL {
+                let mut profile = Profile {
+                    tls_fingerprint: fingerprint,
+                    ..Default::default()
+                };
+                profile.endpoint.selection = selection;
+                let refreshed =
+                    refresh_pin(&profile, &refresher, crate::socket::noop_socket_protector())
+                        .await
+                        .unwrap();
+                assert_eq!(refreshed.tls_fingerprint, fingerprint);
+                assert_eq!(refreshed.assigned_ipv4.to_string(), "172.16.0.2");
+                assert_eq!(refreshed.assigned_ipv6.to_string(), "2001:db8::2");
+            }
+        }
     }
 
     #[test]

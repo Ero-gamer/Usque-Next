@@ -173,6 +173,7 @@ class FakeEngineClient
   Future<EngineCapabilities?> getCapabilities() async =>
       const EngineCapabilities(
         networkSettingsApplication: true,
+        tlsFingerprints: TlsFingerprint.values,
         automaticEndpoints: true,
       );
 

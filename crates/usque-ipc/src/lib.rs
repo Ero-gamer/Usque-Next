@@ -1210,6 +1210,29 @@ mod tests {
     }
 
     #[test]
+    fn tls_fingerprint_uses_appended_profile_and_capability_fields() {
+        let profile = Profile {
+            tls_fingerprint: crate::v1::TlsFingerprint::Chrome131 as i32,
+            ..Default::default()
+        };
+        assert_eq!(profile.encode_to_vec(), [0xd0, 0x01, 0x02]);
+        assert_eq!(
+            Profile::decode(profile.encode_to_vec().as_slice()).unwrap(),
+            profile
+        );
+        assert_eq!(Profile::decode(&[][..]).unwrap().tls_fingerprint, 0);
+        let capabilities = crate::v1::Capabilities {
+            tls_fingerprints: vec![1, 2],
+            ..Default::default()
+        };
+        assert_eq!(capabilities.encode_to_vec(), [0x82, 0x03, 0x02, 0x01, 0x02]);
+        assert_eq!(
+            crate::v1::Capabilities::decode(capabilities.encode_to_vec().as_slice()).unwrap(),
+            capabilities
+        );
+    }
+
+    #[test]
     fn quic_policy_and_capability_use_appended_wire_numbers() {
         let profile = Profile {
             disable_quic: true,

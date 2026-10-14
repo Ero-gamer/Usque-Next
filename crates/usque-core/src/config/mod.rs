@@ -21,6 +21,7 @@ mod data_plane;
 mod initial_identity;
 mod network;
 mod routing;
+mod tls_fingerprint;
 #[cfg(test)]
 mod warp_dns_tests;
 
@@ -32,8 +33,9 @@ pub use network::SharedNetworkSettings;
 pub use routing::{
     MAX_ROUTING_RULES_PER_KIND, RoutingAction, RoutingMatch, RoutingRule, RoutingSettings,
 };
+pub use tls_fingerprint::TlsFingerprint;
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 24;
+pub const CURRENT_SCHEMA_VERSION: u32 = 25;
 /// Vault namespace for device-wide proxy-listener secrets. Never a profile id.
 pub const SHARED_NETWORK_SECRET_ID: Uuid =
     Uuid::from_u128(0x9f1c_6b20_5a7e_4d3a_9c11_00c0_ffee_0001);
@@ -467,6 +469,9 @@ pub struct Profile {
     #[serde(default)]
     pub frontends: FrontendSettings,
     pub transport: TransportPolicy,
+    /// ClientHello preset for the WARP MASQUE connection, on both H2 and H3.
+    #[serde(default)]
+    pub tls_fingerprint: TlsFingerprint,
     #[serde(default)]
     pub data_plane: DataPlaneMode,
     #[serde(default)]
@@ -516,6 +521,7 @@ impl Default for Profile {
             mode: OperatingMode::legacy_platform_default(),
             frontends: FrontendSettings::default(),
             transport: TransportPolicy::Auto,
+            tls_fingerprint: TlsFingerprint::Default,
             data_plane: DataPlaneMode::ConnectIp,
             congestion_control: CongestionControlAlgorithm::default(),
             endpoint: EndpointSettings::default(),

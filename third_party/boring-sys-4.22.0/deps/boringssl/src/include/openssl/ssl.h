@@ -1553,6 +1553,12 @@ OPENSSL_EXPORT int SSL_CTX_set_strict_cipher_list(SSL_CTX *ctx,
 // garbage inputs, unless an empty cipher list results.
 OPENSSL_EXPORT int SSL_CTX_set_cipher_list(SSL_CTX *ctx, const char *str);
 
+// USQUE_SSL_CTX_set_aes_cipher_preference fixes the AES-first handshake
+// preference on |ctx| for a deterministic ClientHello profile. It does not
+// change CPU feature detection or the implementation used for encryption.
+// Configure the context before creating any SSL connections from it.
+OPENSSL_EXPORT void USQUE_SSL_CTX_set_aes_cipher_preference(SSL_CTX *ctx);
+
 // SSL_set_strict_cipher_list configures the cipher list for |ssl|, evaluating
 // |str| as a cipher string and returning error if |str| contains anything
 // meaningless. It returns one on success and zero on failure.

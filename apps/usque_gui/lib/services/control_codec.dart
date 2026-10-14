@@ -127,6 +127,7 @@ class ControlCodec {
       }
       writer.message(25, routing.takeBytes());
     }
+    writer.enumeration(26, profile.tlsFingerprint.index + 1);
     writer.message(17, directDns.takeBytes());
     if (profile.warpDns != const WarpDnsSettings()) {
       writer.message(24, warpDns.takeBytes());
@@ -827,6 +828,7 @@ UsqueProfile _decodeProfile(_ProtoReader reader) {
   var dataPlane = defaults.dataPlane;
   var disableQuic = false;
   var congestionControl = defaults.congestionControl;
+  var tlsFingerprint = defaults.tlsFingerprint;
   var ipPolicy = defaults.ipPolicy;
   var endpointIpv4 = defaults.endpointIpv4;
   var endpointIpv6 = defaults.endpointIpv6;
@@ -951,6 +953,12 @@ UsqueProfile _decodeProfile(_ProtoReader reader) {
         warpDns = _decodeWarpDnsSettings(reader.message(field));
       case 25:
         routing = _decodeRoutingSettings(reader.message(field));
+      case 26:
+        tlsFingerprint = switch (reader.varint(field)) {
+          0 || 1 => TlsFingerprint.defaultProfile,
+          2 => TlsFingerprint.chrome131,
+          _ => throw const FormatException('Invalid TLS fingerprint'),
+        };
       case 18:
         final value = reader.varint(field);
         congestionControl = value == 0
@@ -992,6 +1000,7 @@ UsqueProfile _decodeProfile(_ProtoReader reader) {
     chainExit: chainExit,
     disableQuic: disableQuic,
     congestionControl: congestionControl,
+    tlsFingerprint: tlsFingerprint,
     ipPolicy: ipPolicy,
     endpointIpv4: endpointIpv4,
     endpointIpv6: endpointIpv6,
@@ -1773,6 +1782,7 @@ EngineCapabilities _decodeCapabilities(_ProtoReader reader) {
   var automaticEndpoints = false;
   var vpnGatePoolFavorites = false;
   final congestionAlgorithms = <CongestionControlAlgorithm>[];
+  final tlsFingerprints = <TlsFingerprint>[];
   var networkQuality = false;
   var encryptedDirectDns = false;
   var encryptedWarpDns = false;
@@ -1806,6 +1816,20 @@ EngineCapabilities _decodeCapabilities(_ProtoReader reader) {
         chainHttpProxy = reader.varint(field) != 0;
       case 47:
         liveAdsRules = reader.varint(field) != 0;
+      case 48:
+        final values = field.wireType == 2 ? reader.message(field) : null;
+        if (values != null && values.isDone) break;
+        do {
+          final value = values == null
+              ? reader.varint(field)
+              : values._varint();
+          if (value >= 1 && value <= 2) {
+            final fingerprint = TlsFingerprint.values[value - 1];
+            if (!tlsFingerprints.contains(fingerprint)) {
+              tlsFingerprints.add(fingerprint);
+            }
+          }
+        } while (values != null && !values.isDone);
       case 46:
         routingRules = reader.varint(field) != 0;
       case 41:
@@ -1877,6 +1901,7 @@ EngineCapabilities _decodeCapabilities(_ProtoReader reader) {
     chainOpenvpnMultiEndpoint: chainOpenvpnMultiEndpoint,
     vpnGatePoolFavorites: vpnGatePoolFavorites,
     h3CongestionControlAlgorithms: List.unmodifiable(congestionAlgorithms),
+    tlsFingerprints: List.unmodifiable(tlsFingerprints),
     networkQuality: networkQuality,
     encryptedDirectDns: encryptedDirectDns,
     encryptedWarpDns: encryptedWarpDns,

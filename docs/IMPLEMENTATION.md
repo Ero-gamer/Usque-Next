@@ -40,10 +40,12 @@ desktop shortcuts and established Android protection-failure recovery. They
 are not newly introduced v0.3.1 features. TLS, endpoint pins and distinct WARP,
 direct and final-chain DNS policies remain in force.
 
-Configuration schema advances from v0.3.0's 23 to 24: legacy domains and CIDRs
-migrate to DIRECT and countries are retained. Custom CIDRs now route inside the
-application data plane. Recovery journal 5, Agent protocol 3 and sanitized
-recovery export 2 remain unchanged. A v0.3.0 or older engine rejects schema 24;
+Configuration schema advances from v0.3.0's 23 to 25: schema 24 migrates legacy
+domains and CIDRs to DIRECT and retains countries; schema 25 adds the shared
+MASQUE TLS fingerprint preference, preserving the default handshake on upgrade.
+Custom CIDRs now route inside the application data plane. Recovery journal 5,
+Agent protocol 3 and sanitized recovery export 2 remain unchanged. Engines that
+support only schema 24 or earlier reject schema 25;
 see [upgrade compatibility](INSTALLATION.md#configuration-compatibility-when-upgrading).
 
 v0.3.1 is the preparation target. Executable version metadata and the tag

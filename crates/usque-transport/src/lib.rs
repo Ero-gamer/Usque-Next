@@ -9,6 +9,8 @@ mod chain_mss;
 mod chain_raw;
 mod chain_session;
 mod chain_udp;
+#[cfg(test)]
+mod chrome_fingerprint_tests;
 mod connect_ip_control;
 mod data_plane;
 mod diagnostic_probe;
@@ -33,6 +35,7 @@ mod migration_barrier;
 mod netstack;
 mod network_quality;
 mod outbound_packet;
+mod tls_fingerprint;
 #[cfg(feature = "wireguard")]
 pub mod warp_wireguard;
 #[cfg(feature = "wireguard")]

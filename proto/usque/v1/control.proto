@@ -34,6 +34,13 @@ enum TransportPolicy {
   TRANSPORT_POLICY_HTTP2 = 3;
 }
 
+// ClientHello presets for authenticated MASQUE; not full browser emulation.
+enum TlsFingerprint {
+  TLS_FINGERPRINT_UNSPECIFIED = 0;
+  TLS_FINGERPRINT_DEFAULT = 1;
+  TLS_FINGERPRINT_CHROME131 = 2;
+}
+
 enum DataPlaneMode {
   DATA_PLANE_MODE_UNSPECIFIED = 0;
   DATA_PLANE_MODE_CONNECT_IP = 1;
@@ -222,6 +229,7 @@ message Profile {
   repeated string bypass_domains = 23;
   WarpDnsSettings warp_dns = 24;
   RoutingSettings routing = 25;
+  TlsFingerprint tls_fingerprint = 26;
 }
 
 message RoutingSettings {
@@ -498,6 +506,7 @@ message Capabilities {
   bool zero_trust_endpoint_editing = 45;
   bool routing_rules = 46;
   bool live_ads_rules = 47;
+  repeated TlsFingerprint tls_fingerprints = 48;
 }
 
 message FrontendStatus {

@@ -13,9 +13,12 @@ fault-injection = []
 wireguard = ["dep:boringtun"]
 
 [dependencies]
+boring-sys = "=4.22.0"
+brotli-decompressor = "=5.0.0"
+foreign-types = "=0.5.0"
 async-trait.workspace = true
 base64.workspace = true
-boring.workspace = true
+boring = { workspace = true, features = ["pq-experimental"] }
 boringtun = { workspace = true, optional = true }
 bytes.workspace = true
 h2.workspace = true
@@ -32,7 +35,7 @@ socket2.workspace = true
 smoltcp.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-tokio-boring.workspace = true
+tokio-boring = { workspace = true, features = ["pq-experimental"] }
 tokio-rustls.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
@@ -49,6 +52,7 @@ zeroize.workspace = true
 windows-sys.workspace = true
 
 [dev-dependencies]
+usque-platform = { path = "../usque-platform" }
 tempfile.workspace = true
 proptest.workspace = true
 tokio = { workspace = true, features = ["test-util"] }

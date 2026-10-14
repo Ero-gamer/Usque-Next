@@ -43,6 +43,17 @@ enum DataPlaneMode {
 
 enum TransportPolicy { automatic, http3, http2 }
 
+enum TlsFingerprint {
+  defaultProfile('default'),
+  chrome131('chrome131');
+
+  const TlsFingerprint(this.wireName);
+  final String wireName;
+
+  static TlsFingerprint? fromWire(Object? value) =>
+      values.where((profile) => profile.wireName == value).firstOrNull;
+}
+
 enum EndpointSelection { automatic, custom }
 
 enum CongestionControlAlgorithm {
@@ -828,6 +839,7 @@ class UsqueProfile {
     this.transport = TransportPolicy.automatic,
     this.dataPlane = DataPlaneMode.connectIp,
     this.congestionControl = CongestionControlAlgorithm.cubic,
+    this.tlsFingerprint = TlsFingerprint.defaultProfile,
     this.ipPolicy = IpPolicy.automatic,
     this.endpointSelection = EndpointSelection.automatic,
     this.endpointIpv4 = defaultEndpointIpv4,
@@ -869,6 +881,7 @@ class UsqueProfile {
   final TransportPolicy transport;
   final DataPlaneMode dataPlane;
   final CongestionControlAlgorithm congestionControl;
+  final TlsFingerprint tlsFingerprint;
   final IpPolicy ipPolicy;
   final EndpointSelection endpointSelection;
   final String endpointIpv4;
@@ -927,6 +940,7 @@ class UsqueProfile {
   UsqueProfile resetAdvancedDefaults() {
     return copyWith(
       congestionControl: CongestionControlAlgorithm.cubic,
+      tlsFingerprint: TlsFingerprint.defaultProfile,
       transport: TransportPolicy.automatic,
       dataPlane: DataPlaneMode.connectIp,
       ipPolicy: IpPolicy.automatic,
@@ -954,6 +968,7 @@ class UsqueProfile {
     TransportPolicy? transport,
     DataPlaneMode? dataPlane,
     CongestionControlAlgorithm? congestionControl,
+    TlsFingerprint? tlsFingerprint,
     IpPolicy? ipPolicy,
     EndpointSelection? endpointSelection,
     String? endpointIpv4,
@@ -991,6 +1006,7 @@ class UsqueProfile {
       transport: transport ?? this.transport,
       dataPlane: dataPlane ?? this.dataPlane,
       congestionControl: congestionControl ?? this.congestionControl,
+      tlsFingerprint: tlsFingerprint ?? this.tlsFingerprint,
       ipPolicy: ipPolicy ?? this.ipPolicy,
       endpointSelection: endpointSelection ?? this.endpointSelection,
       endpointIpv4: endpointIpv4 ?? this.endpointIpv4,
@@ -1028,6 +1044,7 @@ class UsqueProfile {
       'vpn_gate': vpnGate.toMap(),
       if (chainExit != null) 'chain_exit': chainExit!.toMap(),
       'congestion_control': congestionControl.name,
+      'tls_fingerprint': tlsFingerprint.wireName,
       'ip_policy': ipPolicy.name,
       'endpoint_selection': endpointSelection.name,
       'endpoint_v4': endpointIpv4,
@@ -1119,6 +1136,10 @@ class UsqueProfile {
               _string(map, 'congestion_control'),
             )
           : CongestionControlAlgorithm.cubic,
+      tlsFingerprint: map.containsKey('tls_fingerprint')
+          ? TlsFingerprint.fromWire(map['tls_fingerprint']) ??
+                (throw const FormatException('Invalid tls_fingerprint'))
+          : TlsFingerprint.defaultProfile,
       ipPolicy: _enumByName(IpPolicy.values, _string(map, 'ip_policy')),
       endpointSelection: map.containsKey('endpoint_selection')
           ? _enumByName(
@@ -2093,6 +2114,7 @@ class EngineCapabilities {
     this.l4TunTcp = false,
     this.l4DnsConversion = false,
     this.h3CongestionControlAlgorithms = const <CongestionControlAlgorithm>[],
+    this.tlsFingerprints = const <TlsFingerprint>[],
     this.networkQuality = false,
     this.encryptedDirectDns = false,
     this.encryptedWarpDns = false,
@@ -2100,46 +2122,53 @@ class EngineCapabilities {
     this.automaticPmtu = false,
   });
 
-  factory EngineCapabilities.fromMap(Map<Object?, Object?> map) =>
-      EngineCapabilities(
-        vpnGateTcp: map['vpn_gate_tcp'] == true,
-        chainProfileImport: map['chain_profile_import'] == true,
-        chainOpenvpnUdp: map['chain_openvpn_udp'] == true,
-        chainWireguard: map['chain_wireguard'] == true,
-        chainWarpWireguard: map['chain_warp_wireguard'] == true,
-        chainHttpProxy: map['chain_http_proxy'] == true,
-        chainSocks5Proxy: map['chain_socks5_proxy'] == true,
-        chainProxyEncryptedDns: map['chain_proxy_encrypted_dns'] == true,
-        customBypass: map['custom_bypass'] == true,
-        routingRules: map['routing_rules'] == true,
-        liveAdsRules: map['live_ads_rules'] == true,
-        automaticEndpoints: map['automatic_endpoints'] == true,
-        zeroTrustEndpointEditing: map['zero_trust_endpoint_editing'] == true,
-        chainOpenvpnMultiEndpoint: map['chain_openvpn_multi_endpoint'] == true,
-        vpnGatePoolFavorites: map['vpn_gate_pool_favorites'] == true,
-        networkSettingsApplication: map['network_settings_application'] == true,
-        applicationQuicBlocking: map['application_quic_blocking'] == true,
-        accountMetadataMutations: map['account_metadata_mutations'] == true,
-        sharedProxyAuthApplication:
-            map['shared_proxy_auth_application'] == true,
-        l4Tcp: map['l4_tcp'] == true,
-        l4TunTcp: map['l4_tun_tcp'] == true,
-        l4DnsConversion: map['l4_dns_conversion'] == true,
-        h3CongestionControlAlgorithms: CongestionControlAlgorithm.values
-            .where(
-              (algorithm) =>
-                  (map['h3_congestion_control_algorithms'] as List?)?.contains(
-                    algorithm.name,
-                  ) ??
-                  false,
-            )
-            .toList(growable: false),
-        networkQuality: map['network_quality'] == true,
-        encryptedDirectDns: map['encrypted_direct_dns'] == true,
-        encryptedWarpDns: map['encrypted_warp_dns'] == true,
-        quicMigration: map['quic_migration'] == true,
-        automaticPmtu: map['automatic_pmtu'] == true,
-      );
+  factory EngineCapabilities.fromMap(
+    Map<Object?, Object?> map,
+  ) => EngineCapabilities(
+    vpnGateTcp: map['vpn_gate_tcp'] == true,
+    chainProfileImport: map['chain_profile_import'] == true,
+    chainOpenvpnUdp: map['chain_openvpn_udp'] == true,
+    chainWireguard: map['chain_wireguard'] == true,
+    chainWarpWireguard: map['chain_warp_wireguard'] == true,
+    chainHttpProxy: map['chain_http_proxy'] == true,
+    chainSocks5Proxy: map['chain_socks5_proxy'] == true,
+    chainProxyEncryptedDns: map['chain_proxy_encrypted_dns'] == true,
+    customBypass: map['custom_bypass'] == true,
+    routingRules: map['routing_rules'] == true,
+    liveAdsRules: map['live_ads_rules'] == true,
+    automaticEndpoints: map['automatic_endpoints'] == true,
+    zeroTrustEndpointEditing: map['zero_trust_endpoint_editing'] == true,
+    chainOpenvpnMultiEndpoint: map['chain_openvpn_multi_endpoint'] == true,
+    vpnGatePoolFavorites: map['vpn_gate_pool_favorites'] == true,
+    networkSettingsApplication: map['network_settings_application'] == true,
+    applicationQuicBlocking: map['application_quic_blocking'] == true,
+    accountMetadataMutations: map['account_metadata_mutations'] == true,
+    sharedProxyAuthApplication: map['shared_proxy_auth_application'] == true,
+    l4Tcp: map['l4_tcp'] == true,
+    l4TunTcp: map['l4_tun_tcp'] == true,
+    l4DnsConversion: map['l4_dns_conversion'] == true,
+    h3CongestionControlAlgorithms: CongestionControlAlgorithm.values
+        .where(
+          (algorithm) =>
+              (map['h3_congestion_control_algorithms'] as List?)?.contains(
+                algorithm.name,
+              ) ??
+              false,
+        )
+        .toList(growable: false),
+    tlsFingerprints: TlsFingerprint.values
+        .where(
+          (value) =>
+              (map['tls_fingerprints'] as List?)?.contains(value.wireName) ??
+              false,
+        )
+        .toList(growable: false),
+    networkQuality: map['network_quality'] == true,
+    encryptedDirectDns: map['encrypted_direct_dns'] == true,
+    encryptedWarpDns: map['encrypted_warp_dns'] == true,
+    quicMigration: map['quic_migration'] == true,
+    automaticPmtu: map['automatic_pmtu'] == true,
+  );
 
   final bool customBypass;
   final bool routingRules;
@@ -2166,6 +2195,7 @@ class EngineCapabilities {
   final bool l4DnsConversion;
   bool get l4Available => l4Tcp && l4TunTcp && l4DnsConversion;
   final List<CongestionControlAlgorithm> h3CongestionControlAlgorithms;
+  final List<TlsFingerprint> tlsFingerprints;
   final bool encryptedDirectDns;
   final bool encryptedWarpDns;
   final bool quicMigration;
@@ -2197,6 +2227,7 @@ class EngineCapabilities {
           l4Tcp == other.l4Tcp &&
           l4TunTcp == other.l4TunTcp &&
           l4DnsConversion == other.l4DnsConversion &&
+          listEquals(tlsFingerprints, other.tlsFingerprints) &&
           listEquals(
             h3CongestionControlAlgorithms,
             other.h3CongestionControlAlgorithms,
@@ -2233,7 +2264,10 @@ class EngineCapabilities {
     l4Tcp,
     l4TunTcp,
     l4DnsConversion,
-    Object.hashAll(h3CongestionControlAlgorithms),
+    Object.hash(
+      Object.hashAll(h3CongestionControlAlgorithms),
+      Object.hashAll(tlsFingerprints),
+    ),
     networkQuality,
     Object.hash(encryptedDirectDns, encryptedWarpDns),
     quicMigration,

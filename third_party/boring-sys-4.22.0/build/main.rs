@@ -706,6 +706,11 @@ fn get_cpp_runtime_lib(config: &Config) -> Option<String> {
 }
 
 fn main() {
+    // Local native patches must invalidate both the compiled library and its
+    // generated bindings, not leave a previously cached C API in use.
+    for source in ["build", "patches", "deps/boringssl", "deps/boringssl-fips"] {
+        println!("cargo:rerun-if-changed={source}");
+    }
     let config = Config::from_env();
     ensure_patches_applied(&config).unwrap();
     if !config.env.docs_rs {

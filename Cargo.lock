@@ -22,6 +22,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "alloc-no-stdlib"
+version = "2.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc7bb162ec39d46ab1ca8c77bf72e890535becd1751bb45f64c597edb4c8c6b3"
+
+[[package]]
+name = "alloc-stdlib"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e76a019e91224d279006ff972f1e984179a6e9feb050adba6ce8274aef23195"
+dependencies = [
+ "alloc-no-stdlib",
+]
+
+[[package]]
 name = "android_system_properties"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -251,6 +266,16 @@ dependencies = [
  "tracing",
  "untrusted",
  "x25519-dalek",
+]
+
+[[package]]
+name = "brotli-decompressor"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "874bb8112abecc98cbd6d81ea4fa7e94fb9449648c93cc89aa40c81c24d7de03"
+dependencies = [
+ "alloc-no-stdlib",
+ "alloc-stdlib",
 ]
 
 [[package]]
@@ -3153,8 +3178,11 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "boring",
+ "boring-sys",
  "boringtun",
+ "brotli-decompressor",
  "bytes",
+ "foreign-types",
  "h2",
  "http",
  "http-body-util",
@@ -3179,6 +3207,7 @@ dependencies = [
  "usque-core",
  "usque-geo",
  "usque-openvpn",
+ "usque-platform",
  "usque-protocol",
  "uuid",
  "webpki-roots",

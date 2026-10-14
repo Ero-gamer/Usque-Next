@@ -39,6 +39,7 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
   late TransportPolicy _transport;
   late DataPlaneMode _dataPlane;
   late CongestionControlAlgorithm _congestionControl;
+  late TlsFingerprint _tlsFingerprint;
   late IpPolicy _ipPolicy;
   late EndpointSelection _endpointSelection;
   late bool _allowLan;
@@ -88,6 +89,7 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
     _transport,
     _dataPlane,
     _congestionControl,
+    _tlsFingerprint,
     _ipPolicy,
     _allowLan,
     _disableQuic,
@@ -200,6 +202,7 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
     _transport = profile.transport;
     _dataPlane = profile.dataPlane;
     _congestionControl = profile.congestionControl;
+    _tlsFingerprint = profile.tlsFingerprint;
     _ipPolicy = profile.ipPolicy;
     _endpointSelection = profile.endpointSelection;
     _allowLan = profile.allowLan;
@@ -704,6 +707,8 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
         ],
         const SizedBox(height: 16),
         _transportTuning(),
+        const SizedBox(height: 20),
+        _tlsFingerprintPicker(),
       ],
     );
   }
@@ -717,6 +722,57 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
       IpPolicy.ipv4Only => 'ipv4_only',
       IpPolicy.ipv6Only => 'ipv6_only',
     });
+  }
+
+  Widget _tlsFingerprintPicker() {
+    final strings = widget.controller.strings;
+    final supported =
+        widget.controller.engineCapabilities?.tlsFingerprints ??
+        const <TlsFingerprint>[];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DropdownButtonFormField<TlsFingerprint>(
+          key: ValueKey('tls-fingerprint-$_tlsFingerprint'),
+          style: FieldDropdown.valueStyle(context),
+          iconSize: FieldDropdown.iconSize,
+          initialValue: _tlsFingerprint,
+          isExpanded: true,
+          decoration: FieldDropdown.decoration(
+            context,
+            labelText: strings.get('tls_fingerprint'),
+          ),
+          items: TlsFingerprint.values
+              .map(
+                (value) => DropdownMenuItem(
+                  value: value,
+                  enabled: supported.contains(value),
+                  child: Text(
+                    value == TlsFingerprint.defaultProfile
+                        ? strings.get('tls_fingerprint_default')
+                        : 'Chrome 131',
+                  ),
+                ),
+              )
+              .toList(),
+          onChanged: _saving || supported.isEmpty
+              ? null
+              : (value) {
+                  if (value == null) return;
+                  setState(() => _tlsFingerprint = value);
+                  _edited();
+                },
+        ),
+        const SizedBox(height: 8),
+        HintText(
+          strings.get(
+            supported.isEmpty
+                ? 'tls_fingerprint_unsupported'
+                : 'tls_fingerprint_help',
+          ),
+        ),
+      ],
+    );
   }
 
   String? _validateIp(String? value, InternetAddressType expected) {
@@ -921,6 +977,7 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
       'transport',
       'data_plane',
       'congestion_control',
+      'tls_fingerprint',
       'ip_policy',
       'allow_lan',
       'disable_quic',
@@ -953,6 +1010,7 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
         transport: _transport,
         dataPlane: _dataPlane,
         congestionControl: _congestionControl,
+        tlsFingerprint: _tlsFingerprint,
         ipPolicy: _ipPolicy,
         endpointSelection: endpointIpsManaged
             ? EndpointSelection.custom

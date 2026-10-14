@@ -761,6 +761,13 @@ fn quic_config_with_features(
 ) -> Result<(quiche::Config, Arc<PinState>), TransportError> {
     let mut tls = SslContextBuilder::new(SslMethod::tls())?;
     let pin_state = configure_client_identity_and_pin(&mut tls, identity)?;
+    crate::tls_fingerprint::configure_context(
+        &mut tls,
+        identity.tls_fingerprint,
+        crate::tls_fingerprint::Carrier::H3,
+        #[cfg(test)]
+        identity.fingerprint_probe.clone(),
+    )?;
     let mut config = quiche::Config::with_boring_ssl_ctx_builder(quiche::PROTOCOL_VERSION, tls)
         .map_err(|error| TransportError::Http3(format!("create QUIC config: {error:?}")))?;
     config

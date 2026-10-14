@@ -572,6 +572,7 @@ class AppController extends ChangeNotifier {
       }
       final needsCapabilities =
           activeProfile.dataPlane == DataPlaneMode.l4Proxy ||
+          activeProfile.tlsFingerprint != TlsFingerprint.defaultProfile ||
           activeProfile.vpnGate.enabled ||
           (activeProfile.endpointSelection == EndpointSelection.automatic &&
               identityStatus(activeProfile.id).provider !=
@@ -1176,6 +1177,16 @@ class AppController extends ChangeNotifier {
   }
 
   void _requireDataPlaneCapability(UsqueProfile profile) {
+    if (profile.tlsFingerprint != TlsFingerprint.defaultProfile &&
+        !(engineCapabilities?.tlsFingerprints.contains(
+              profile.tlsFingerprint,
+            ) ??
+            false)) {
+      throw EngineException(
+        'TLS_FINGERPRINT_UNSUPPORTED',
+        strings.get('tls_fingerprint_unsupported'),
+      );
+    }
     if (profile.endpointSelection == EndpointSelection.automatic &&
         identityStatus(profile.id).provider != IdentityProvider.zeroTrust &&
         !(engineCapabilities?.automaticEndpoints ?? false)) {
@@ -2549,6 +2560,15 @@ class AppController extends ChangeNotifier {
       lastError = strings.vpnGateUnsupported;
       _notifyListeners();
       return Future.value(false);
+    }
+    if (updated.tlsFingerprint != TlsFingerprint.defaultProfile &&
+        !(engineCapabilities?.tlsFingerprints.contains(
+              updated.tlsFingerprint,
+            ) ??
+            false)) {
+      lastError = strings.get('tls_fingerprint_unsupported');
+      _notifyListeners();
+      return false;
     }
     if (updated.dataPlane == DataPlaneMode.l4Proxy &&
         !(engineCapabilities?.l4Available ?? false)) {

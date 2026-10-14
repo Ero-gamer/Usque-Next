@@ -20,8 +20,10 @@ See [Upgrade](#upgrade) if that version cannot uninstall.
 ### Configuration compatibility when upgrading
 
 v0.3.0 uses configuration schema 23; v0.2.9 uses schema 21. Current source uses
-schema 24, adding unified routing rules and Ads to existing WARP encrypted DNS
-and account-specific Zero Trust endpoint settings. Older custom domains and
+schema 25, adding a shared MASQUE TLS fingerprint preference after schema 24's
+unified routing rules and Ads. Existing configurations keep the default TLS
+handshake; WARP encrypted DNS and account-specific Zero Trust endpoint settings
+are retained. Older custom domains and
 CIDRs migrate to DIRECT rules; country selections remain. Custom CIDRs now
 route in the application data plane rather than through physical bypass routes.
 Opening the newer app migrates and saves older configuration. Older apps reject

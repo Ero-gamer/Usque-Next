@@ -60,6 +60,7 @@ pub fn classify_reconfigure(previous: &Profile, next: &Profile) -> ReconfigureCl
         || previous.data_plane == crate::DataPlaneMode::L4Proxy
             && previous.frontends.tunnel != next.frontends.tunnel
         || previous.transport != next.transport
+        || previous.tls_fingerprint != next.tls_fingerprint
         || previous.endpoint != next.endpoint
         || previous.ip_policy != next.ip_policy
         || previous.mtu != next.mtu
@@ -144,6 +145,30 @@ mod tests {
 
     fn base() -> Profile {
         Profile::default()
+    }
+
+    #[test]
+    fn fingerprint_changes_are_cold_even_alongside_hot_settings() {
+        for fingerprint in crate::TlsFingerprint::ALL {
+            let mut previous = base();
+            previous.tls_fingerprint = fingerprint;
+            let mut next = previous.clone();
+            next.tls_fingerprint = if fingerprint == crate::TlsFingerprint::Default {
+                crate::TlsFingerprint::Chrome131
+            } else {
+                crate::TlsFingerprint::Default
+            };
+            assert_eq!(
+                classify_reconfigure(&previous, &next),
+                ReconfigureClass::ColdReconnect
+            );
+            next.proxy.socks5_listeners[0].set_port(1081);
+            next.disable_quic = !previous.disable_quic;
+            assert_eq!(
+                classify_reconfigure(&previous, &next),
+                ReconfigureClass::ColdReconnect
+            );
+        }
     }
 
     #[test]

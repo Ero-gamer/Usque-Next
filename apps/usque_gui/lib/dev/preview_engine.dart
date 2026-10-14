@@ -38,6 +38,7 @@ class PreviewEngine
     encryptedDirectDns: true,
     encryptedWarpDns: true,
     h3CongestionControlAlgorithms: CongestionControlAlgorithm.values,
+    tlsFingerprints: TlsFingerprint.values,
   );
 
   late List<UsqueProfile> _profiles;

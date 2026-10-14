@@ -1433,7 +1433,8 @@ impl ControlService {
         )
         .await
         .ok()
-        .and_then(Result::ok);
+        .and_then(Result::ok)
+        .map(|identity| identity.with_fingerprint(profile.tls_fingerprint));
         let endpoints = usque_transport::h3_probe_endpoints(&profile);
         Some(diagnostics::DiagnosticProbeContext {
             settings: profile.direct_dns.clone(),
@@ -4771,6 +4772,17 @@ fn parse_profile_id(value: &str) -> Result<Uuid, ControlServiceError> {
 fn profile_from_proto(source: v1::Profile) -> Result<Profile, ControlServiceError> {
     let defaults = Profile::default();
     let congestion_control = congestion::from_proto(source.congestion_control)?;
+    let tls_fingerprint = match v1::TlsFingerprint::try_from(source.tls_fingerprint) {
+        Ok(v1::TlsFingerprint::Unspecified | v1::TlsFingerprint::Default) => {
+            usque_core::TlsFingerprint::Default
+        }
+        Ok(v1::TlsFingerprint::Chrome131) => usque_core::TlsFingerprint::Chrome131,
+        Err(_) => {
+            return Err(ControlServiceError::InvalidRequest(
+                "unknown TLS fingerprint".to_owned(),
+            ));
+        }
+    };
     let endpoint = source.endpoint.ok_or_else(|| {
         ControlServiceError::InvalidRequest("profile endpoint is missing".to_owned())
     })?;
@@ -4917,6 +4929,7 @@ fn profile_from_proto(source: v1::Profile) -> Result<Profile, ControlServiceErro
             }
         },
         congestion_control,
+        tls_fingerprint,
         endpoint: EndpointSettings {
             ipv4: endpoint
                 .ipv4
@@ -5068,6 +5081,7 @@ pub(crate) fn profile_to_proto(profile: &Profile) -> v1::Profile {
         vpn_gate: Some(vpngate::settings_to_proto(&profile.vpn_gate)),
         data_plane: data_plane::to_proto(profile.data_plane),
         congestion_control: congestion::to_proto(profile.congestion_control),
+        tls_fingerprint: tls_fingerprint_to_proto(profile.tls_fingerprint),
         id: profile.id.to_string(),
         name: profile.name.clone(),
         mode: match profile.mode {
@@ -5248,6 +5262,13 @@ fn proxy_to_proto(proxy: &ProxySettings) -> v1::ProxySettings {
     }
 }
 
+fn tls_fingerprint_to_proto(preset: usque_core::TlsFingerprint) -> i32 {
+    match preset {
+        usque_core::TlsFingerprint::Default => v1::TlsFingerprint::Default as i32,
+        usque_core::TlsFingerprint::Chrome131 => v1::TlsFingerprint::Chrome131 as i32,
+    }
+}
+
 fn current_capabilities() -> v1::Capabilities {
     v1::Capabilities {
         chain_profile_import: cfg!(windows),
@@ -5272,6 +5293,10 @@ fn current_capabilities() -> v1::Capabilities {
         l4_tun_tcp: cfg!(windows),
         l4_dns_conversion: true,
         network_settings_application: true,
+        tls_fingerprints: usque_core::TlsFingerprint::ALL
+            .into_iter()
+            .map(tls_fingerprint_to_proto)
+            .collect(),
         h3_congestion_control_algorithms: usque_core::CongestionControlAlgorithm::ALL
             .into_iter()
             .map(congestion::to_proto)
@@ -6748,6 +6773,7 @@ mod tests {
         assert!(capabilities.encrypted_direct_dns);
         assert!(capabilities.quic_migration);
         assert!(capabilities.automatic_pmtu);
+        assert_eq!(capabilities.tls_fingerprints, [1, 2]);
     }
 
     #[tokio::test]
@@ -8910,6 +8936,31 @@ mod tests {
             snapshot_to_proto(&ConnectionSnapshot::default()).session_congestion_control,
             0
         );
+    }
+
+    #[test]
+    fn tls_fingerprint_proto_defaults_and_round_trips_are_explicit() {
+        for fingerprint in usque_core::TlsFingerprint::ALL {
+            let profile = Profile {
+                tls_fingerprint: fingerprint,
+                ..Default::default()
+            };
+            assert_eq!(
+                profile_from_proto(profile_to_proto(&profile))
+                    .unwrap()
+                    .tls_fingerprint,
+                fingerprint
+            );
+        }
+        let mut legacy = profile_to_proto(&Profile::default());
+        legacy.tls_fingerprint = 0;
+        assert_eq!(
+            profile_from_proto(legacy.clone()).unwrap().tls_fingerprint,
+            usque_core::TlsFingerprint::Default
+        );
+        legacy.tls_fingerprint = 99;
+        assert!(profile_from_proto(legacy).is_err());
+        assert_eq!(current_capabilities().tls_fingerprints, [1, 2]);
     }
 
     #[test]

@@ -152,6 +152,7 @@ pub extern "system" fn Java_io_github_georgexie2333_usque_NativeEngine_nativeCap
             "quic_migration": engine_ready() && usque_transport::PRODUCTION_NETWORK_FEATURES.quic_migration,
             "automatic_pmtu": engine_ready() && usque_transport::PRODUCTION_NETWORK_FEATURES.automatic_pmtu,
             "h3_congestion_control_algorithms": if engine_ready() { usque_core::CongestionControlAlgorithm::ALL.to_vec() } else { Vec::new() },
+            "tls_fingerprints": if engine_ready() { usque_core::TlsFingerprint::ALL.to_vec() } else { Vec::new() },
         })
         .to_string();
         environment
@@ -1076,6 +1077,8 @@ struct AndroidProfile {
     transport: String,
     #[serde(default)]
     congestion_control: usque_core::CongestionControlAlgorithm,
+    #[serde(default)]
+    tls_fingerprint: usque_core::TlsFingerprint,
     ip_policy: String,
     endpoint_v4: String,
     endpoint_v6: String,
@@ -1289,6 +1292,7 @@ fn android_profile_to_core(source: AndroidProfile) -> Result<Profile, String> {
         frontends,
         transport,
         congestion_control: source.congestion_control,
+        tls_fingerprint: source.tls_fingerprint,
         endpoint: EndpointSettings {
             ipv4: parse_value(&source.endpoint_v4, "endpoint IPv4")?,
             ipv6: parse_value(&source.endpoint_v6, "endpoint IPv6")?,
@@ -2174,6 +2178,7 @@ fn android_profile_value(
             TransportPolicy::Http2 => "http2",
         },
         "congestion_control": profile.congestion_control,
+        "tls_fingerprint": profile.tls_fingerprint,
         "data_plane": profile.data_plane,
         "disable_quic": profile.disable_quic,
         "ip_policy": match profile.ip_policy {
@@ -4193,6 +4198,27 @@ mod tests {
                 usque_core::CongestionControlAlgorithm::Cubic
             );
             json["congestion_control"] = serde_json::json!("unknown");
+            assert!(serde_json::from_value::<AndroidProfile>(json).is_err());
+        }
+    }
+
+    #[test]
+    fn android_fingerprint_roundtrips_defaults_and_rejects_unknown_values() {
+        for fingerprint in usque_core::TlsFingerprint::ALL {
+            let profile = Profile {
+                tls_fingerprint: fingerprint,
+                ..Default::default()
+            };
+            let mut json = android_profile_value(&profile, None, false);
+            let parsed: AndroidProfile = serde_json::from_value(json.clone()).unwrap();
+            assert_eq!(
+                android_profile_to_core(parsed).unwrap().tls_fingerprint,
+                fingerprint
+            );
+            json.as_object_mut().unwrap().remove("tls_fingerprint");
+            let legacy: AndroidProfile = serde_json::from_value(json.clone()).unwrap();
+            assert_eq!(legacy.tls_fingerprint, usque_core::TlsFingerprint::Default);
+            json["tls_fingerprint"] = serde_json::json!("unknown");
             assert!(serde_json::from_value::<AndroidProfile>(json).is_err());
         }
     }

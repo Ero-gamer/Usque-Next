@@ -207,6 +207,75 @@ void main() {
     expect(app.snapshot.phase, ConnectionPhase.disconnected);
   });
 
+  for (final zeroTrust in [false, true]) {
+    final account = zeroTrust ? 'Zero Trust' : 'custom endpoints';
+    TransientCapabilities chromeBootstrap() => TransientCapabilities()
+      ..legacyProfilesImported = true
+      ..storedProfiles = [
+        UsqueProfile.defaultProfile().copyWith(
+          autoConnect: true,
+          endpointSelection: EndpointSelection.custom,
+          tlsFingerprint: TlsFingerprint.chrome131,
+        ),
+      ]
+      ..storedIdentityStatuses = {
+        UsqueProfile.defaultProfileId: ProfileIdentityStatus(
+          state: ProfileIdentityState.ready,
+          provider: zeroTrust
+              ? IdentityProvider.zeroTrust
+              : IdentityProvider.consumer,
+        ),
+      };
+
+    test(
+      'Chrome startup with $account retries temporary capability failures',
+      () async {
+        final engine = chromeBootstrap();
+        final app = AppController(engine);
+        addTearDown(app.dispose);
+        await app.initialize();
+        expect(engine.attempts, 1);
+        expect(engine.calls, isNot(contains('connect')));
+        expect(app.snapshot.phase, ConnectionPhase.disconnected);
+        expect(app.lastError, isNull);
+        await engine.connected.future.timeout(const Duration(seconds: 8));
+        await Future<void>.delayed(Duration.zero);
+        expect(engine.attempts, 3);
+        expect(engine.calls.where((call) => call == 'connect'), hasLength(1));
+        expect(
+          engine.lastConnectedProfile?.tlsFingerprint,
+          TlsFingerprint.chrome131,
+        );
+        expect(
+          engine.lastConnectedProfile?.endpointSelection,
+          EndpointSelection.custom,
+        );
+        expect(app.snapshot.phase, ConnectionPhase.connected);
+        expect(app.lastError, isNull);
+      },
+    );
+
+    test(
+      'user disconnect survives Chrome capability recovery with $account',
+      () async {
+        final engine = chromeBootstrap();
+        final app = AppController(engine);
+        addTearDown(app.dispose);
+        await app.initialize();
+        engine.current = const EngineSnapshot(phase: ConnectionPhase.connected);
+        await app.refreshSnapshot();
+        await app.connectOrDisconnect();
+        await engine.recovered.future.timeout(const Duration(seconds: 8));
+        await Future<void>.delayed(Duration.zero);
+        expect(engine.attempts, 3);
+        expect(engine.calls, contains('disconnect'));
+        expect(engine.calls, isNot(contains('connect')));
+        expect(app.snapshot.phase, ConnectionPhase.disconnected);
+        expect(app.sharedNetwork.tlsFingerprint, TlsFingerprint.chrome131);
+      },
+    );
+  }
+
   test(
     'identity completion cannot reconnect after cancellation or account change',
     () async {

@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     Account, CongestionControlAlgorithm, DataPlaneMode, DirectDnsSettings, DnsMode,
-    EndpointSettings, FrontendSettings, IpPolicy, Profile, ProxySettings, TransportPolicy,
-    WarpDnsSettings,
+    EndpointSettings, FrontendSettings, IpPolicy, Profile, ProxySettings, TlsFingerprint,
+    TransportPolicy, WarpDnsSettings,
 };
 
 /// Device-wide MASQUE, DNS, proxy, and output settings. A Zero Trust account
@@ -15,6 +15,8 @@ use super::{
 pub struct SharedNetworkSettings {
     pub frontends: FrontendSettings,
     pub transport: TransportPolicy,
+    #[serde(default)]
+    pub tls_fingerprint: TlsFingerprint,
     #[serde(default)]
     pub data_plane: DataPlaneMode,
     #[serde(default)]
@@ -65,6 +67,7 @@ impl SharedNetworkSettings {
         Self {
             frontends: profile.frontends,
             transport: profile.transport,
+            tls_fingerprint: profile.tls_fingerprint,
             data_plane: profile.data_plane,
             congestion_control: profile.congestion_control,
             endpoint: profile.endpoint.clone(),
@@ -105,6 +108,7 @@ impl SharedNetworkSettings {
             mode: super::OperatingMode::Vpn,
             frontends: self.frontends,
             transport: self.transport,
+            tls_fingerprint: self.tls_fingerprint,
             data_plane: self.data_plane,
             congestion_control: self.congestion_control,
             endpoint,

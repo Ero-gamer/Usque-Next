@@ -106,6 +106,9 @@ impl H2FlowControlConfig {
 /// import. Public pin and assigned addresses are safe to retain for the session.
 #[derive(Clone)]
 pub struct MasqueTlsIdentity {
+    pub(crate) tls_fingerprint: usque_core::TlsFingerprint,
+    #[cfg(test)]
+    pub(crate) fingerprint_probe: Option<crate::chrome_fingerprint_tests::Probe>,
     private_key_sec1_der: Zeroizing<Vec<u8>>,
     endpoint_pin: EndpointPin,
     pub(crate) provider: Option<usque_core::IdentityProvider>,
@@ -115,6 +118,12 @@ pub struct MasqueTlsIdentity {
 }
 
 impl MasqueTlsIdentity {
+    /// Selects the handshake profile without changing enrollment or peer trust.
+    pub fn with_fingerprint(mut self, profile: usque_core::TlsFingerprint) -> Self {
+        self.tls_fingerprint = profile;
+        self
+    }
+
     pub fn endpoint_pool(&self) -> usque_core::EndpointPool {
         usque_core::EndpointPool::from_entitlement(self.entitlement)
     }
@@ -138,6 +147,9 @@ impl MasqueTlsIdentity {
         let endpoint_pin = EndpointPin::from_spki_der(endpoint_pin_spki_der)
             .map_err(|_| TransportError::InvalidEndpointPin)?;
         Ok(Self {
+            tls_fingerprint: usque_core::TlsFingerprint::Default,
+            #[cfg(test)]
+            fingerprint_probe: None,
             private_key_sec1_der,
             endpoint_pin,
             provider: None,
@@ -595,11 +607,12 @@ pub(crate) async fn connect_h2_with_cancellation(
     }
 
     let (connector, pin_state) = tls_connector(identity)?;
-    let config = connector
+    let mut config = connector
         .configure()?
         // The enrolled public-key pin is the trust anchor. The configurable
         // fronting SNI is intentionally not the certificate hostname.
         .verify_hostname(false);
+    crate::tls_fingerprint::configure_h2_connection(&mut config, identity.tls_fingerprint)?;
     let tls_result = tokio::select! {
         biased;
         _ = cancellation.cancelled() => return Err(TransportError::TunnelClosed),
@@ -1150,8 +1163,22 @@ fn tls_connector(
     let mut builder = SslConnector::builder(SslMethod::tls())?;
     let pin_state = configure_client_identity_and_pin(&mut builder, identity)?;
     builder.set_alpn_protos(H2_ALPN)?;
+    crate::tls_fingerprint::configure_context(
+        &mut builder,
+        identity.tls_fingerprint,
+        crate::tls_fingerprint::Carrier::H2,
+        #[cfg(test)]
+        identity.fingerprint_probe.clone(),
+    )?;
 
     Ok((builder.build(), pin_state))
+}
+
+#[cfg(test)]
+pub(crate) fn fingerprint_test_connector(
+    identity: &MasqueTlsIdentity,
+) -> Result<SslConnector, TransportError> {
+    tls_connector(identity).map(|(connector, _)| connector)
 }
 
 pub(crate) fn configure_client_identity_and_pin(

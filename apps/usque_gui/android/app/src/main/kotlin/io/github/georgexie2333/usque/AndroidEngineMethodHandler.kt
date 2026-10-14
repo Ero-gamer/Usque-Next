@@ -405,6 +405,7 @@ internal class AndroidEngineMethodHandler(
                     NetworkQualityFields.capabilities(native) +
                         mapOf(
                             "h3_congestion_control_algorithms" to CongestionControlSettings.capabilities(native),
+                            "tls_fingerprints" to TlsFingerprintSettings.capabilities(native),
                             "network_settings_application" to
                                 (
                                     native?.let {

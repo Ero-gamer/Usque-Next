@@ -59,11 +59,13 @@ APK has a higher code than the same release's universal APK; switching from
 split to universal may be rejected. Do not bypass Android's monotonic version
 check or treat source arithmetic as a device-upgrade result.
 
-The v0.3.0 tag uses configuration schema 23; current source uses schema 24.
+The v0.3.0 tag uses configuration schema 23; current source uses schema 25.
 Schema 24 migrates custom bypass domains and CIDRs to DIRECT routing rules,
 retains countries, and adds REJECT/PROXY actions and optional Ads. Custom CIDRs
 now route in the application data plane instead of creating physical bypass
-routes. Once migrated, v0.3.0 and older engines reject the configuration. Keep
+routes. Schema 25 adds the shared MASQUE TLS fingerprint preference with the
+default handshake retained during migration. Once migrated, engines supporting
+only schema 24 or earlier reject the configuration. Keep
 recoverable pre-upgrade data when rollback is required; never lower schema
 numbers or replace recovery records to bypass validation. Recovery journal 5,
 Agent protocol 3 and sanitized recovery export schema 2 remain unchanged and

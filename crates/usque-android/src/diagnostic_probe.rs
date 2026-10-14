@@ -247,6 +247,7 @@ fn run_probe(
             let identity = match warp_identity_from_secret(secret)
                 .ok()
                 .and_then(|identity| MasqueTlsIdentity::from_warp_identity(&identity).ok())
+                .map(|identity| identity.with_fingerprint(profile.tls_fingerprint))
             {
                 Some(identity) => identity,
                 None => return ResultCode::NotApplicable,

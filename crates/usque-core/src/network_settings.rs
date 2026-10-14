@@ -16,6 +16,7 @@ macro_rules! network_fields {
             "frontends.socks5" => frontends.socks5,
             "frontends.http" => frontends.http,
             "transport" => transport,
+            "tls_fingerprint" => tls_fingerprint,
             "data_plane" => data_plane,
             "congestion_control" => congestion_control,
             "endpoint.ipv4" => endpoint.ipv4,
@@ -333,6 +334,45 @@ mod tests {
             values: config.active_profile().unwrap(),
             changed_fields: fields.iter().map(|value| (*value).to_owned()).collect(),
         }
+    }
+
+    #[test]
+    fn fingerprint_patch_is_shared_and_requires_reconnection() {
+        let mut config = AppConfig::default();
+        let previous = config.active_profile().unwrap();
+        let mut edit = patch(&config, &["tls_fingerprint"]);
+        edit.values.tls_fingerprint = crate::TlsFingerprint::Chrome131;
+        // An unrelated stale value must not be copied by a field-scoped edit.
+        edit.values.mtu = 1400;
+        let stored = merge_patch(&mut config, &edit).unwrap();
+        assert_eq!(stored.mtu, previous.mtu);
+        assert_eq!(
+            config.network.tls_fingerprint,
+            crate::TlsFingerprint::Chrome131
+        );
+        assert_eq!(changed_fields(&previous, &stored), ["tls_fingerprint"]);
+        let plan = plan_application(
+            Some(&previous),
+            &stored,
+            &edit.changed_fields,
+            ConnectionPhase::Connected,
+            true,
+        )
+        .unwrap();
+        assert_eq!(plan.class, ReconfigureClass::ColdReconnect);
+        assert_eq!(
+            plan.target.unwrap().tls_fingerprint,
+            crate::TlsFingerprint::Chrome131
+        );
+        let deferred = plan_application(
+            None,
+            &stored,
+            &edit.changed_fields,
+            ConnectionPhase::Disconnected,
+            true,
+        )
+        .unwrap();
+        assert_eq!(deferred.status, ApplyStatus::Deferred);
     }
 
     #[test]

@@ -224,8 +224,8 @@ impl L4Client {
             #[cfg(test)]
             test_options,
             epoch,
+            identity: Arc::new(identity.with_fingerprint(profile.tls_fingerprint)),
             profile,
-            identity: Arc::new(identity),
             protector,
             pin_refresher,
             telemetry,
@@ -524,7 +524,7 @@ impl Supervisor {
                                     if self.profile.endpoint.selection == usque_core::EndpointSelection::Automatic && identity.endpoint_pool() != self.identity.endpoint_pool() {
                                         self.fail(TransportError::EndpointAssignmentChanged, reconnects); break;
                                     }
-                                    self.identity = Arc::new(identity); next_connect = Instant::now();
+                                    self.identity = Arc::new(identity.with_fingerprint(self.profile.tls_fingerprint)); next_connect = Instant::now();
                                 }
                                 Ok(_) => { self.fail(TransportError::InvalidIdentity, reconnects); break; }
                                 Err(error) => { self.fail(error, reconnects); break; }
