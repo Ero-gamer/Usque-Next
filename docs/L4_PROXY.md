@@ -78,6 +78,9 @@ official long-term protocol guarantee. Source-derived vectors and attribution
 are in the [L4 interoperability fixture](../crates/usque-transport/tests/fixtures/l4/README.md).
 Live Consumer and Zero Trust reachability must be recorded separately; offline
 fixture success is not a Cloudflare® account test.
+The [2026-10-14 fingerprint experiment](L4_CHROME_FINGERPRINT_VALIDATION.md)
+verified Consumer L4 CONNECT and HTTPS with Default and Chrome 131 profiles at
+one ingress. Zero Trust was not tested in that experiment.
 
 ### Traffic behavior
 

@@ -12,7 +12,7 @@ use super::{Carrier, Probe};
 use crate::h2::{MasqueTlsIdentity, TransportError};
 use crate::socket::noop_socket_protector;
 
-async fn identity_from_vault(config: &AppConfig) -> MasqueTlsIdentity {
+pub(super) async fn identity_from_vault(config: &AppConfig) -> MasqueTlsIdentity {
     let id = config
         .active_profile_id
         .expect("enrolled active account required");

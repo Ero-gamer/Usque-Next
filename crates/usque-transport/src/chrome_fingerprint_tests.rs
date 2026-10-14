@@ -8,6 +8,8 @@
 
 mod hello;
 #[cfg(windows)]
+mod l4_live;
+#[cfg(windows)]
 mod live;
 
 use std::ffi::{c_int, c_void};

@@ -64,6 +64,8 @@ lifecycle or leak behavior.
 
 The [implementation validation record](TLS_FINGERPRINT_IMPLEMENTATION_VALIDATION.md)
 lists the separate production-source checks and unavailable environments.
+The [L4 compatibility record](L4_CHROME_FINGERPRINT_VALIDATION.md) separately
+verifies Consumer L4 CONNECT and an HTTPS exchange with both profiles.
 
 ## 选择与应用
 

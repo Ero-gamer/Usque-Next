@@ -95,6 +95,7 @@ Common terms in these references:
 | --- | --- |
 | [Chrome ClientHello compatibility](CHROME_FINGERPRINT_VALIDATION.md) | Explicit H2/H3 WARP handshake and CONNECT-IP experiment, profile limits and validation / H2、H3 指纹握手与 CONNECT-IP 实测、指纹范围与验证 |
 | [TLS fingerprint implementation validation](TLS_FINGERPRINT_IMPLEMENTATION_VALIDATION.md) | Production setting, parser/authentication checks, native builds and unavailable isolated checks / 正式设置实现、解析与认证检查、原生编译及未运行的隔离验证 |
+| [L4 Chrome fingerprint validation](L4_CHROME_FINGERPRINT_VALIDATION.md) | Consumer L4 CONNECT and verified HTTPS with Default/Chrome, normal and no-AES processes / 默认与 Chrome 指纹在正常及无 AES 进程中的 L4 CONNECT 和 HTTPS 实测 |
 | [Implementation baseline](implementation-baseline.md) | PR-00 source, toolchain, and unavailable-lab baseline / PR-00 基线 |
 | [v0.3.0 readiness review](RELEASE_V0.3.0_READINESS.md) | Historical preparation review with its original source, checks and unavailable evidence / 保留当时源码、检查与缺失证据的历史发布准备审查 |
 | [MASQUE performance candidates](MASQUE_PERFORMANCE_VALIDATION.md) | Staged source candidates, checks, and unmeasured device results / 分阶段候选、检查与待测设备结果 |
