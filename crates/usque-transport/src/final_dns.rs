@@ -1,4 +1,5 @@
-//! Bounded candidate racing for the final chained exit only.
+//! Bounded candidate racing inside the selected tunnel or final chained exit.
+use std::collections::VecDeque;
 use std::future::Future;
 use std::time::Duration;
 use tokio::time::{Instant, sleep_until, timeout_at};
@@ -67,66 +68,117 @@ where
     query_with_limit(servers, deadline, Duration::from_secs(4), query).await
 }
 
-/// DoH includes TLS and HTTP/2 setup in its per-candidate budget.
-pub(crate) async fn query_doh<S: Copy, T, F, Fut>(
+/// Encrypted DNS includes TLS setup in its per-candidate budget. A pending
+/// bootstrap family joins the same two slots without delaying a usable peer.
+pub(crate) async fn query_doh<S: Copy, T, F, Fut, R>(
     servers: &[S],
     deadline: Instant,
+    additional: R,
     query: F,
 ) -> Result<T, String>
 where
     F: FnMut(S, Instant) -> Fut,
     Fut: Future<Output = Result<T, String>>,
+    R: Future<Output = Vec<S>>,
 {
-    query_with_limit(servers, deadline, Duration::from_secs(2), query).await
+    query_with_pending(
+        servers,
+        deadline,
+        Duration::from_secs(2),
+        usque_core::config::MAX_DIRECT_DNS_BOOTSTRAP_IPS,
+        additional,
+        query,
+    )
+    .await
 }
 
 async fn query_with_limit<S: Copy, T, F, Fut>(
     servers: &[S],
     deadline: Instant,
     limit: Duration,
-    mut query: F,
+    query: F,
 ) -> Result<T, String>
 where
     F: FnMut(S, Instant) -> Fut,
     Fut: Future<Output = Result<T, String>>,
 {
+    query_with_pending(
+        servers,
+        deadline,
+        limit,
+        servers.len(),
+        std::future::ready(Vec::new()),
+        query,
+    )
+    .await
+}
+
+async fn query_with_pending<S: Copy, T, F, Fut, R>(
+    servers: &[S],
+    deadline: Instant,
+    limit: Duration,
+    max_per_batch: usize,
+    additional: R,
+    mut query: F,
+) -> Result<T, String>
+where
+    F: FnMut(S, Instant) -> Fut,
+    Fut: Future<Output = Result<T, String>>,
+    R: Future<Output = Vec<S>>,
+{
     let deadline = deadline.min(Instant::now() + Duration::from_secs(4));
     let mut first = None;
     let mut second = None;
-    let mut remaining = servers.iter();
+    let mut remaining: VecDeque<_> = servers.iter().copied().take(max_per_batch).collect();
+    tokio::pin!(additional);
+    let mut resolved = false;
     let mut next_start = Instant::now();
-    let mut exhausted = false;
     let mut last = "no usable DNS servers".to_owned();
     loop {
         if Instant::now() >= deadline {
             return Err("DNS query timed out".into());
         }
         let active = usize::from(first.is_some()) + usize::from(second.is_some());
-        if !exhausted && active < 2 && (active == 0 || Instant::now() >= next_start) {
-            if let Some(server) = remaining.next() {
-                let candidate_deadline = deadline.min(Instant::now() + limit);
-                let future = query(*server, candidate_deadline);
-                let future = Box::pin(async move {
-                    timeout_at(candidate_deadline, future)
-                        .await
-                        .unwrap_or_else(|_| Err("DNS candidate timed out".into()))
-                });
-                if first.is_none() {
-                    first = Some(future);
-                } else {
-                    second = Some(future);
-                }
-                next_start = Instant::now() + Duration::from_millis(250);
+        if active < 2
+            && (active == 0 || Instant::now() >= next_start)
+            && let Some(server) = remaining.pop_front()
+        {
+            let candidate_deadline = deadline.min(Instant::now() + limit);
+            let future = query(server, candidate_deadline);
+            let future = Box::pin(async move {
+                timeout_at(candidate_deadline, future)
+                    .await
+                    .unwrap_or_else(|_| Err("DNS candidate timed out".into()))
+            });
+            if first.is_none() {
+                first = Some(future);
             } else {
-                exhausted = true;
+                second = Some(future);
             }
+            next_start = Instant::now() + Duration::from_millis(250);
         }
-        if first.is_none() && second.is_none() && exhausted {
+        if first.is_none() && second.is_none() && remaining.is_empty() && resolved {
             return Err(last);
         }
         let result = tokio::select! {
             _ = sleep_until(deadline) => return Err("DNS query timed out".into()),
-            _ = sleep_until(next_start), if !exhausted && (first.is_none() || second.is_none()) => continue,
+            servers = &mut additional, if !resolved => {
+                resolved = true;
+                // Prefer the newly resolved family for the next hedge, then
+                // alternate with untried peers. Each family contributes at most
+                // eight addresses; exhausting the first cannot discard the other.
+                let mut servers = servers.into_iter().take(max_per_batch);
+                let mut merged = VecDeque::new();
+                loop {
+                    match (servers.next(), remaining.pop_front()) {
+                        (None, None) => break,
+                        (new, old) => merged.extend(new.into_iter().chain(old)),
+                    }
+                }
+                remaining = merged;
+                continue;
+            },
+            _ = sleep_until(next_start), if !remaining.is_empty() && (first.is_none() || second.is_none()) => continue,
             result = wait(&mut first), if first.is_some() => { first.take(); result },
             result = wait(&mut second), if second.is_some() => { second.take(); result },
         };
@@ -149,6 +201,139 @@ async fn wait<F: Future + Unpin>(slot: &mut Option<F>) -> F::Output {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn encrypted_candidates_do_not_wait_for_a_silent_bootstrap_family() {
+        let start = Instant::now();
+        assert_eq!(
+            query_doh(
+                &[1],
+                start + Duration::from_secs(4),
+                std::future::pending(),
+                |server, _| async move { Ok(server) }
+            )
+            .await
+            .unwrap(),
+            1
+        );
+        assert_eq!(start.elapsed(), Duration::ZERO);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn late_bootstrap_family_can_replace_failed_or_silent_candidates() {
+        for silent in [false, true] {
+            let start = Instant::now();
+            let additional = async {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                vec![2]
+            };
+            let result = query_doh(
+                &[1],
+                start + Duration::from_secs(4),
+                additional,
+                |server, _| async move {
+                    if server == 2 {
+                        Ok(2)
+                    } else if silent {
+                        std::future::pending().await
+                    } else {
+                        Err("refused".into())
+                    }
+                },
+            )
+            .await;
+            assert_eq!(result, Ok(2));
+            assert_eq!(
+                start.elapsed(),
+                Duration::from_millis(if silent { 250 } else { 20 })
+            );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn exhausting_the_first_family_does_not_discard_pending_bootstrap() {
+        let started = std::sync::Mutex::new(Vec::new());
+        let start = Instant::now();
+        let result = query_doh(
+            &(1..=8).collect::<Vec<_>>(),
+            start + Duration::from_secs(4),
+            async {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                vec![9]
+            },
+            |server, _| {
+                started.lock().unwrap().push(server);
+                async move {
+                    if server == 9 {
+                        Ok(9)
+                    } else {
+                        Err("refused".into())
+                    }
+                }
+            },
+        )
+        .await;
+        assert_eq!(result, Ok(9));
+        assert_eq!(*started.lock().unwrap(), (1..=9).collect::<Vec<_>>());
+        assert_eq!(start.elapsed(), Duration::from_millis(20));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn resolved_families_share_candidate_concurrency_and_deadline_limits() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let active = AtomicUsize::new(0);
+        let started = std::sync::Mutex::new(Vec::new());
+        struct Guard<'a>(&'a AtomicUsize);
+        impl Drop for Guard<'_> {
+            fn drop(&mut self) {
+                self.0.fetch_sub(1, Ordering::SeqCst);
+            }
+        }
+        for silent in [false, true] {
+            started.lock().unwrap().clear();
+            let start = Instant::now();
+            let additional = async {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                (11..=42).collect()
+            };
+            let result: Result<(), _> = query_doh(
+                &(1..=8).collect::<Vec<_>>(),
+                start + Duration::from_secs(3),
+                additional,
+                |server, _| {
+                    let active = &active;
+                    let started = &started;
+                    async move {
+                        started.lock().unwrap().push(server);
+                        assert!(active.fetch_add(1, Ordering::SeqCst) < 2);
+                        let _guard = Guard(active);
+                        if silent {
+                            std::future::pending::<()>().await;
+                        }
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        Err("failed".into())
+                    }
+                },
+            )
+            .await;
+            assert!(result.is_err());
+            assert_eq!(active.load(Ordering::SeqCst), 0);
+            let started = started.lock().unwrap();
+            assert_eq!(&started[..2], &[1, 11], "late family gets the next hedge");
+            if silent {
+                assert_eq!(start.elapsed(), Duration::from_secs(3));
+                assert_eq!(started.len(), 4);
+            } else {
+                assert_eq!(
+                    started.len(),
+                    16,
+                    "each family contributes at most eight candidates"
+                );
+                assert!(started.iter().all(|server| *server <= 18));
+                assert!(start.elapsed() < Duration::from_secs(3));
+            }
+        }
+    }
 
     #[tokio::test(start_paused = true)]
     async fn stream_candidates_preserve_backup_start_and_whole_question_deadline() {

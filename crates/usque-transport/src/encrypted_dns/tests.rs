@@ -21,6 +21,8 @@ use tokio::time::timeout;
 use super::*;
 use crate::network_quality::NetworkQualitySampler;
 
+mod warp_recovery;
+
 #[tokio::test]
 async fn encrypted_dns_wrapper_forwards_reconnect_observations() {
     use crate::socket::{PhysicalNetworkAvailability, PhysicalNetworkSnapshot};

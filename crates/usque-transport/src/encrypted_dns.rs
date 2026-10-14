@@ -827,6 +827,7 @@ impl EncryptedResolver {
         epoch: &CancellationToken,
     ) -> Result<Bytes, DirectDnsError> {
         if let DnsConnector::Final { bootstrap, .. } = &self.connector {
+            let mut pending_bootstrap = None;
             let bootstrap_ips = if self.settings.bootstrap_ips.is_empty() {
                 let resolver = bootstrap
                     .as_ref()
@@ -847,6 +848,7 @@ impl EncryptedResolver {
                 if addresses.is_empty() {
                     return Err(DirectDnsError::BootstrapUnavailable);
                 }
+                pending_bootstrap = Some(candidates);
                 addresses
             } else {
                 self.settings.bootstrap_ips.clone()
@@ -854,6 +856,20 @@ impl EncryptedResolver {
             return crate::final_dns::query_doh(
                 &bootstrap_ips,
                 context.deadline,
+                async move {
+                    if let Some(mut candidates) = pending_bootstrap {
+                        while let Some(result) = candidates.next().await {
+                            if let Ok(mut addresses) = result
+                                && !addresses.is_empty()
+                            {
+                                addresses
+                                    .truncate(usque_core::config::MAX_DIRECT_DNS_BOOTSTRAP_IPS);
+                                return addresses;
+                            }
+                        }
+                    }
+                    Vec::new()
+                },
                 |ip, deadline| {
                     let query = query.clone();
                     async move {
@@ -1415,68 +1431,32 @@ impl EncryptedResolver {
                     let endpoint = connection.endpoint;
                     remember_bootstrap(visited, endpoint.ip());
                     let deadline = context.deadline.min(Instant::now() + REQUEST_TIMEOUT);
-                    let result = timeout_at(deadline, async {
-                        self.ensure_connection_current(context, connection.generation)?;
-                        connection
-                            .stream
-                            .write_u16(query.len() as u16)
+                    let context = DirectDnsQueryContext {
+                        deadline,
+                        ..context
+                    };
+                    let mut result = self.exchange_dot(&mut connection, query, context).await;
+                    if connection.queries > 0
+                        && matches!(self.connector, DnsConnector::Final { .. })
+                        && result == Err(DirectDnsError::QueryFailed)
+                    {
+                        // A peer may retire an otherwise reusable TLS connection.
+                        // Release it before one fresh attempt at the same encrypted
+                        // endpoint, within the original candidate deadline/epoch.
+                        drop(connection);
+                        self.ensure_connection_current(context, generation)?;
+                        let stream = timeout_at(deadline, self.connect_one(endpoint, context))
                             .await
-                            .map_err(|_| DirectDnsError::QueryFailed)?;
-                        connection
-                            .stream
-                            .write_all(query)
-                            .await
-                            .map_err(|_| DirectDnsError::QueryFailed)?;
-                        connection
-                            .stream
-                            .flush()
-                            .await
-                            .map_err(|_| DirectDnsError::QueryFailed)?;
-                        #[cfg(any(test, feature = "fault-injection"))]
-                        if self
-                            .quality
-                            .take_fault(crate::fault_injection::FaultPoint::DotPrefix)
-                            .is_some()
-                        {
-                            return Err(DirectDnsError::InvalidResponse);
-                        }
-                        let length = connection
-                            .stream
-                            .read_u16()
-                            .await
-                            .map_err(|_| DirectDnsError::QueryFailed)?;
-                        if length == 0 {
-                            return Err(DirectDnsError::InvalidResponse);
-                        }
-                        #[cfg(any(test, feature = "fault-injection"))]
-                        if self
-                            .quality
-                            .take_fault(crate::fault_injection::FaultPoint::DotBody)
-                            .is_some()
-                        {
-                            return Err(DirectDnsError::QueryFailed);
-                        }
-                        let mut response = vec![0; usize::from(length)];
-                        connection
-                            .stream
-                            .read_exact(&mut response)
-                            .await
-                            .map_err(|_| DirectDnsError::QueryFailed)?;
-                        validate_dns_exchange(query, &response)
-                            .map_err(|_| DirectDnsError::InvalidResponse)?;
-                        if matches!(self.connector, DnsConnector::Final { .. }) {
-                            crate::split_dns::validate_resolver_response(query, &response)
-                                .map_err(|_| DirectDnsError::InvalidResponse)?;
-                            if response[2] & 2 != 0 {
-                                return Err(DirectDnsError::InvalidResponse);
-                            }
-                        }
-                        self.ensure_connection_current(context, connection.generation)?;
-                        Ok(Bytes::from(response))
-                    })
-                    .await
-                    .map_err(|_| DirectDnsError::Timeout)
-                    .and_then(|result| result);
+                            .map_err(|_| DirectDnsError::Timeout)??;
+                        connection = DotConnection {
+                            stream,
+                            endpoint,
+                            generation,
+                            queries: 0,
+                            last_used: Instant::now(),
+                        };
+                        result = self.exchange_dot(&mut connection, query, context).await;
+                    }
                     if result.is_ok() {
                         connection.queries += 1;
                         connection.last_used = Instant::now();
@@ -1493,6 +1473,74 @@ impl EncryptedResolver {
             }
             notified.await;
         }
+    }
+
+    async fn exchange_dot(
+        &self,
+        connection: &mut DotConnection,
+        query: &[u8],
+        context: DirectDnsQueryContext,
+    ) -> Result<Bytes, DirectDnsError> {
+        timeout_at(context.deadline, async {
+            self.ensure_connection_current(context, connection.generation)?;
+            connection
+                .stream
+                .write_u16(query.len() as u16)
+                .await
+                .map_err(|_| DirectDnsError::QueryFailed)?;
+            connection
+                .stream
+                .write_all(query)
+                .await
+                .map_err(|_| DirectDnsError::QueryFailed)?;
+            connection
+                .stream
+                .flush()
+                .await
+                .map_err(|_| DirectDnsError::QueryFailed)?;
+            #[cfg(any(test, feature = "fault-injection"))]
+            if self
+                .quality
+                .take_fault(crate::fault_injection::FaultPoint::DotPrefix)
+                .is_some()
+            {
+                return Err(DirectDnsError::InvalidResponse);
+            }
+            let length = connection
+                .stream
+                .read_u16()
+                .await
+                .map_err(|_| DirectDnsError::QueryFailed)?;
+            if length == 0 {
+                return Err(DirectDnsError::InvalidResponse);
+            }
+            #[cfg(any(test, feature = "fault-injection"))]
+            if self
+                .quality
+                .take_fault(crate::fault_injection::FaultPoint::DotBody)
+                .is_some()
+            {
+                return Err(DirectDnsError::QueryFailed);
+            }
+            let mut response = vec![0; usize::from(length)];
+            connection
+                .stream
+                .read_exact(&mut response)
+                .await
+                .map_err(|_| DirectDnsError::QueryFailed)?;
+            validate_dns_exchange(query, &response).map_err(|_| DirectDnsError::InvalidResponse)?;
+            if matches!(self.connector, DnsConnector::Final { .. }) {
+                crate::split_dns::validate_resolver_response(query, &response)
+                    .map_err(|_| DirectDnsError::InvalidResponse)?;
+                if response[2] & 2 != 0 {
+                    return Err(DirectDnsError::InvalidResponse);
+                }
+            }
+            self.ensure_connection_current(context, connection.generation)?;
+            Ok(Bytes::from(response))
+        })
+        .await
+        .map_err(|_| DirectDnsError::Timeout)?
     }
 }
 
