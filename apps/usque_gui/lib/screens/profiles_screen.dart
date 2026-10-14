@@ -20,6 +20,9 @@ class ProfilesScreen extends StatelessWidget {
     final strings = controller.strings;
     return PageFrame(
       title: strings.get('profiles'),
+      // The same column as Proxy and Settings, so switching sections never
+      // moves the heading or the list edges.
+      contentWidth: 880,
       subtitle: strings.get('profiles_subtitle'),
       actions: <Widget>[
         FilledButton.icon(
@@ -37,7 +40,8 @@ class ProfilesScreen extends StatelessWidget {
                 identityState: controller.identityState(profile.id),
                 identityStatus: controller.identityStatus(profile.id),
                 strings: strings,
-                onActivate: () => controller.setActiveProfile(profile.id),
+                canDelete: controller.profiles.length > 1,
+                onActivate: () => _activateProfile(context, profile, strings),
                 onConfigureIdentity: () => showProfileIdentityDialog(
                   context,
                   controller: controller,
@@ -56,6 +60,41 @@ class ProfilesScreen extends StatelessWidget {
             .toList(growable: false),
       ),
     );
+  }
+
+  /// Switching the account of a live session reconnects it, so that case
+  /// asks first. A disconnected or failed session switches directly.
+  Future<void> _activateProfile(
+    BuildContext context,
+    UsqueProfile profile,
+    AppStrings strings,
+  ) async {
+    final snapshot = controller.snapshot;
+    if (snapshot.isConnected || snapshot.isTransitional) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => UsqueDialog(
+          icon: LucideIcons.refreshCw,
+          title: strings.get('set_active'),
+          subtitle: profile.name,
+          width: 420,
+          content: Text(strings.get('switch_account_reconnect_body')),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(strings.get('cancel')),
+            ),
+            FilledButton(
+              key: const ValueKey('profile-switch-confirm'),
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(strings.get('set_active')),
+            ),
+          ],
+        ),
+      );
+      if (!(confirmed ?? false)) return;
+    }
+    controller.setActiveProfile(profile.id);
   }
 
   Future<void> _createProfile(BuildContext context) async {
@@ -443,6 +482,7 @@ class _ProfileRow extends StatelessWidget {
     required this.identityState,
     required this.identityStatus,
     required this.strings,
+    required this.canDelete,
     required this.onActivate,
     required this.onConfigureIdentity,
     required this.onEdit,
@@ -455,6 +495,7 @@ class _ProfileRow extends StatelessWidget {
   final ProfileIdentityState identityState;
   final ProfileIdentityStatus identityStatus;
   final AppStrings strings;
+  final bool canDelete;
   final VoidCallback onActivate;
   final VoidCallback onConfigureIdentity;
   final VoidCallback onEdit;
@@ -507,8 +548,11 @@ class _ProfileRow extends StatelessWidget {
                     tone: StatusTone.success,
                   )
                 : null;
+            // Wrapped runs keep the trailing edge the actions are aligned to.
             final actions = Wrap(
               spacing: 6,
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: <Widget>[
                 if (!active)
                   TextButton.icon(
@@ -522,24 +566,24 @@ class _ProfileRow extends StatelessWidget {
                     icon: const Icon(LucideIcons.keyRound, size: 18),
                     label: Text(strings.get('configure_identity')),
                   ),
+                // One icon per action: the license kind is already the tag's.
                 if (identityState == ProfileIdentityState.ready)
                   IconButton(
                     tooltip: strings.get('identity_and_license'),
                     onPressed: onManageIdentity,
-                    icon: Icon(
-                      identityStatus.licenseState == LicenseState.warpPlus
-                          ? LucideIcons.badgeCheck
-                          : LucideIcons.keyRound,
-                    ),
+                    icon: const Icon(LucideIcons.keyRound),
                   ),
                 IconButton(
-                  tooltip: strings.get('edit'),
+                  tooltip: strings.get('edit_profile'),
                   onPressed: onEdit,
                   icon: const Icon(LucideIcons.pencil),
                 ),
                 IconButton(
-                  tooltip: strings.get('delete'),
-                  onPressed: onDelete,
+                  key: ValueKey('profile-delete-${profile.id}'),
+                  tooltip: strings.get(
+                    canDelete ? 'delete' : 'profile_required',
+                  ),
+                  onPressed: canDelete ? onDelete : null,
                   icon: const Icon(LucideIcons.trash2),
                 ),
               ],
@@ -550,48 +594,49 @@ class _ProfileRow extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.titleLarge,
             );
+            // Name and its tags form one block in every layout; the icon
+            // follows the name's line. Wide rows centre the actions on the
+            // block, narrow ones move them below a hairline.
+            final identity = Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Icon(
+                  active ? LucideIcons.circleCheck : LucideIcons.layers3,
+                  size: 24,
+                  color: active
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      name,
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: <Widget>[identityTag, ?activePill],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Row(
-                  crossAxisAlignment: compact
-                      ? CrossAxisAlignment.start
-                      : CrossAxisAlignment.center,
-                  children: <Widget>[
-                    Icon(
-                      active ? LucideIcons.circleCheck : LucideIcons.layers3,
-                      size: 24,
-                      color: active
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 13),
-                    Expanded(
-                      child: compact
-                          ? Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                name,
-                                const SizedBox(height: 8),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 6,
-                                  children: <Widget>[identityTag, ?activePill],
-                                ),
-                              ],
-                            )
-                          : name,
-                    ),
-                    if (!compact) ...<Widget>[
-                      const SizedBox(width: 10),
-                      identityTag,
-                      if (activePill != null) const SizedBox(width: 8),
-                      ?activePill,
-                      const SizedBox(width: 10),
+                if (compact)
+                  identity
+                else
+                  Row(
+                    children: <Widget>[
+                      Expanded(child: identity),
+                      const SizedBox(width: 16),
                       actions,
                     ],
-                  ],
-                ),
+                  ),
                 if (compact) ...<Widget>[
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 14),

@@ -152,6 +152,8 @@ const Map<String, String> kPtCatalog = <String, String>{
   'cancel': 'Cancelar',
   'active': 'Ativo',
   'set_active': 'Definir como ativo',
+  'switch_account_reconnect_body':
+      'A conexão atual será restabelecida com esta conta.',
   'edit': 'Editar',
   'delete': 'Excluir',
   'delete_profile': 'Remover conta?',
@@ -187,8 +189,6 @@ const Map<String, String> kPtCatalog = <String, String>{
   'dns_leak_warning': 'O DNS local pode revelar os nomes solicitados',
   'dns_leak_warning_body':
       'O DNS local e do sistema pode revelar os domínios solicitados à rede atual.',
-  'system_proxy': 'Configurar proxy do sistema',
-  'output_disabled_in_profile': 'Desabilitado em Configurações',
   'auto_connect': 'Conectar a conta atual automaticamente ao iniciar',
   'lan_warning': 'Proxy exposto à rede local',
   'lan_warning_body':

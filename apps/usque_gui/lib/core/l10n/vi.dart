@@ -149,6 +149,8 @@ const Map<String, String> kViCatalog = <String, String>{
   'cancel': 'Hủy',
   'active': 'Đang dùng',
   'set_active': 'Đặt làm hiện tại',
+  'switch_account_reconnect_body':
+      'Kết nối hiện tại sẽ được kết nối lại bằng tài khoản này.',
   'edit': 'Sửa',
   'delete': 'Xóa',
   'delete_profile': 'Xóa tài khoản?',
@@ -183,8 +185,6 @@ const Map<String, String> kViCatalog = <String, String>{
   'dns_leak_warning': 'DNS cục bộ có thể lộ tên đã yêu cầu',
   'dns_leak_warning_body':
       'DNS cục bộ và hệ thống có thể tiết lộ các miền được yêu cầu cho mạng hiện tại.',
-  'system_proxy': 'Cấu hình proxy hệ thống',
-  'output_disabled_in_profile': 'Đã tắt trong Cài đặt',
   'auto_connect': 'Tự kết nối tài khoản hiện tại khi khởi động',
   'lan_warning': 'Proxy đang mở ra mạng cục bộ',
   'lan_warning_body':

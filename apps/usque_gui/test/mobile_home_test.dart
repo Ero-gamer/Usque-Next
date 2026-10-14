@@ -440,7 +440,10 @@ void main() {
       expect(_trace(tester, 'download').samples, isEmpty);
       expect(_trace(tester, 'upload').samples, isEmpty);
       expect(find.text('Singapore'), findsNothing);
-      expect(find.text('Available after connecting'), findsOneWidget);
+      expect(
+        find.text('VPN and proxies for the next connection'),
+        findsOneWidget,
+      );
       expect(find.text('Traffic appears after connecting'), findsOneWidget);
       expect(fixture.engine.qualityRequests, 0);
     },

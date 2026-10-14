@@ -152,6 +152,8 @@ const Map<String, String> kNlCatalog = <String, String>{
   'cancel': 'Annuleren',
   'active': 'Actief',
   'set_active': 'Actief maken',
+  'switch_account_reconnect_body':
+      'De huidige verbinding wordt opnieuw opgezet met dit account.',
   'edit': 'Bewerken',
   'delete': 'Verwijderen',
   'delete_profile': 'Account verwijderen?',
@@ -186,8 +188,6 @@ const Map<String, String> kNlCatalog = <String, String>{
   'dns_leak_warning': 'Lokale DNS kan opgevraagde namen prijsgeven',
   'dns_leak_warning_body':
       'Lokale en systeem-DNS kunnen aangevraagde domeinen aan je huidige netwerk onthullen.',
-  'system_proxy': 'Systeemproxy configureren',
-  'output_disabled_in_profile': 'Uitgeschakeld in Instellingen',
   'auto_connect': 'Het huidige account bij het starten automatisch verbinden',
   'lan_warning': 'Proxy is blootgesteld aan het lokale netwerk',
   'lan_warning_body':

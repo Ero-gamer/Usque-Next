@@ -484,7 +484,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Not enabled'), findsNothing);
         expect(find.textContaining(expected), findsOneWidget);
-        expect(find.text('WireGuard'), findsOneWidget);
+        expect(find.text('WireGuard · Office tunnel'), findsOneWidget);
       }
       app.snapshot = const EngineSnapshot();
       app.localePreference = LocalePreference.simplifiedChinese;

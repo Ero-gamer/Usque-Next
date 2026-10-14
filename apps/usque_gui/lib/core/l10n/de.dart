@@ -155,6 +155,8 @@ const Map<String, String> kDeCatalog = <String, String>{
   'cancel': 'Abbrechen',
   'active': 'Aktiv',
   'set_active': 'Als aktiv festlegen',
+  'switch_account_reconnect_body':
+      'Die aktuelle Verbindung wird mit diesem Konto neu aufgebaut.',
   'edit': 'Bearbeiten',
   'delete': 'Löschen',
   'delete_profile': 'Konto entfernen?',
@@ -189,8 +191,6 @@ const Map<String, String> kDeCatalog = <String, String>{
   'dns_leak_warning': 'Lokales DNS kann angeforderte Namen preisgeben',
   'dns_leak_warning_body':
       'Lokales und System-DNS können angefragte Domains im aktuellen Netzwerk offenlegen.',
-  'system_proxy': 'Systemproxy konfigurieren',
-  'output_disabled_in_profile': 'In Einstellungen deaktiviert',
   'auto_connect': 'Aktuelles Konto beim Start automatisch verbinden',
   'lan_warning': 'Proxy im lokalen Netzwerk erreichbar',
   'lan_warning_body':

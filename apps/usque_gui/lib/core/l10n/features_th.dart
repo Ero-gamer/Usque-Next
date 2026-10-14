@@ -54,7 +54,6 @@ const Map<String, String> kUiWorkflowTh = <String, String>{
   'home_traffic_waiting': 'กำลังรอข้อมูลการรับส่ง',
   'home_traffic_unavailable': 'ไม่มีประวัติการรับส่งข้อมูล',
   'home_traffic_stale': 'การอัปเดตข้อมูลการรับส่งล่าช้า',
-  'home_outputs_next': 'ใช้ได้หลังเชื่อมต่อ',
   'home_outputs_retry': 'VPN และพร็อกซีสำหรับการเชื่อมต่อครั้งถัดไป',
   'connection_protection_group': 'การเชื่อมต่อและการป้องกัน',
   'proxy_routing_group': 'พร็อกซีและการกำหนดเส้นทาง',

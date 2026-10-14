@@ -148,6 +148,8 @@ const Map<String, String> kIdCatalog = <String, String>{
   'cancel': 'Batal',
   'active': 'Aktif',
   'set_active': 'Jadikan aktif',
+  'switch_account_reconnect_body':
+      'Koneksi saat ini akan disambungkan ulang dengan akun ini.',
   'edit': 'Ubah',
   'delete': 'Hapus',
   'delete_profile': 'Hapus akun?',
@@ -183,8 +185,6 @@ const Map<String, String> kIdCatalog = <String, String>{
   'dns_leak_warning': 'DNS lokal dapat mengungkapkan nama yang diminta',
   'dns_leak_warning_body':
       'DNS lokal dan sistem dapat mengungkap domain yang diminta ke jaringan saat ini.',
-  'system_proxy': 'Konfigurasikan proksi sistem',
-  'output_disabled_in_profile': 'Dinonaktifkan di Pengaturan',
   'auto_connect': 'Sambungkan akun saat ini secara otomatis saat mulai',
   'lan_warning': 'Proksi terpapar ke jaringan lokal',
   'lan_warning_body':

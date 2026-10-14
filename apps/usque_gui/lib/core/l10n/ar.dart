@@ -145,6 +145,8 @@ const Map<String, String> kArCatalog = <String, String>{
   'cancel': 'إلغاء',
   'active': 'نشط',
   'set_active': 'تعيين كنشط',
+  'switch_account_reconnect_body':
+      'ستتم إعادة الاتصال الحالي باستخدام هذا الحساب.',
   'edit': 'تعديل',
   'delete': 'حذف',
   'delete_profile': 'إزالة الحساب؟',
@@ -179,8 +181,6 @@ const Map<String, String> kArCatalog = <String, String>{
   'dns_leak_warning': 'قد يكشف DNS المحلي الأسماء المطلوبة',
   'dns_leak_warning_body':
       'قد يكشف DNS المحلي وDNS النظام النطاقات المطلوبة لشبكتك الحالية.',
-  'system_proxy': 'تهيئة وكيل النظام',
-  'output_disabled_in_profile': 'معطَّل في الإعدادات',
   'auto_connect': 'الاتصال بالحساب الحالي تلقائيًا عند البدء',
   'lan_warning': 'الوكيل مكشوف للشبكة المحلية',
   'lan_warning_body':

@@ -148,6 +148,8 @@ const Map<String, String> kThCatalog = <String, String>{
   'cancel': 'ยกเลิก',
   'active': 'ใช้งานอยู่',
   'set_active': 'ตั้งเป็นใช้งานอยู่',
+  'switch_account_reconnect_body':
+      'การเชื่อมต่อปัจจุบันจะเชื่อมต่อใหม่โดยใช้บัญชีนี้',
   'edit': 'แก้ไข',
   'delete': 'ลบ',
   'delete_profile': 'ลบบัญชีหรือไม่?',
@@ -182,8 +184,6 @@ const Map<String, String> kThCatalog = <String, String>{
   'dns_leak_warning': 'DNS ในเครื่องอาจเปิดเผยชื่อที่ร้องขอ',
   'dns_leak_warning_body':
       'DNS ในเครื่องและของระบบอาจเปิดเผยโดเมนที่ร้องขอต่อเครือข่ายปัจจุบัน',
-  'system_proxy': 'ตั้งค่าพร็อกซีของระบบ',
-  'output_disabled_in_profile': 'ปิดไว้ในการตั้งค่า',
   'auto_connect': 'เชื่อมต่อบัญชีปัจจุบันโดยอัตโนมัติเมื่อเริ่มต้น',
   'lan_warning': 'พร็อกซีเปิดให้เครือข่ายภายในเข้าถึงได้',
   'lan_warning_body':

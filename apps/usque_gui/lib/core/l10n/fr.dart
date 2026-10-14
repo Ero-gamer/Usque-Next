@@ -156,6 +156,8 @@ const Map<String, String> kFrCatalog = <String, String>{
   'cancel': 'Annuler',
   'active': 'Actif',
   'set_active': 'Définir comme actif',
+  'switch_account_reconnect_body':
+      'La connexion actuelle sera rétablie avec ce compte.',
   'edit': 'Modifier',
   'delete': 'Supprimer',
   'delete_profile': 'Supprimer le compte ?',
@@ -191,8 +193,6 @@ const Map<String, String> kFrCatalog = <String, String>{
   'dns_leak_warning': 'Le DNS local peut révéler les noms demandés',
   'dns_leak_warning_body':
       'Le DNS local et système peut révéler les domaines demandés au réseau actuel.',
-  'system_proxy': 'Configurer le proxy système',
-  'output_disabled_in_profile': 'Désactivé dans Paramètres',
   'auto_connect': 'Connecter automatiquement le compte actuel au démarrage',
   'lan_warning': 'Proxy exposé au réseau local',
   'lan_warning_body':

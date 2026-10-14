@@ -150,6 +150,8 @@ const Map<String, String> kRuCatalog = <String, String>{
   'cancel': 'Отмена',
   'active': 'Активен',
   'set_active': 'Сделать активным',
+  'switch_account_reconnect_body':
+      'Текущее подключение будет переустановлено с этим аккаунтом.',
   'edit': 'Изменить',
   'delete': 'Удалить',
   'delete_profile': 'Удалить аккаунт?',
@@ -184,8 +186,6 @@ const Map<String, String> kRuCatalog = <String, String>{
   'dns_leak_warning': 'Локальный DNS может раскрывать запрашиваемые имена',
   'dns_leak_warning_body':
       'Локальный и системный DNS могут раскрывать запрошенные домены текущей сети.',
-  'system_proxy': 'Настроить системный прокси',
-  'output_disabled_in_profile': 'Отключено в Настройках',
   'auto_connect': 'Автоматически подключать текущий аккаунт при запуске',
   'lan_warning': 'Прокси доступен в локальной сети',
   'lan_warning_body':

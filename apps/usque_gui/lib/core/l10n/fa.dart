@@ -148,6 +148,8 @@ const Map<String, String> kFaCatalog = <String, String>{
   'cancel': 'لغو',
   'active': 'فعال',
   'set_active': 'فعال کردن',
+  'switch_account_reconnect_body':
+      'اتصال فعلی با این حساب دوباره برقرار می‌شود.',
   'edit': 'ویرایش',
   'delete': 'حذف',
   'delete_profile': 'حساب حذف شود؟',
@@ -182,8 +184,6 @@ const Map<String, String> kFaCatalog = <String, String>{
   'dns_leak_warning': 'DNS محلی ممکن است نام‌های درخواستی را فاش کند',
   'dns_leak_warning_body':
       'DNS محلی و سیستم ممکن است دامنه‌های درخواستی را به شبکهٔ فعلی نشان دهند.',
-  'system_proxy': 'پیکربندی پروکسی سیستم',
-  'output_disabled_in_profile': 'در تنظیمات غیرفعال شده',
   'auto_connect': 'اتصال خودکار حساب جاری هنگام شروع',
   'lan_warning': 'پروکسی در شبکهٔ محلی در دسترس است',
   'lan_warning_body':

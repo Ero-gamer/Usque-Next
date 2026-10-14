@@ -3722,7 +3722,7 @@ void main() {
       }
 
       for (var index = 0; index < 50; index += 1) {
-        await tester.tap(find.byTooltip('Edit').first);
+        await tester.tap(find.byTooltip('Rename account').first);
         await tester.pumpAndSettle();
         await tester.enterText(find.byType(TextField), 'Edited $index');
         await injectStatus(index + 100);
@@ -3731,7 +3731,7 @@ void main() {
       }
 
       for (var index = 0; index < 50; index += 1) {
-        await tester.tap(find.byTooltip('Edit').first);
+        await tester.tap(find.byTooltip('Rename account').first);
         await tester.pumpAndSettle();
         await tester.enterText(find.byType(TextField), 'Enter $index');
         await injectStatus(index + 150);
@@ -4989,7 +4989,7 @@ void main() {
       await toggle('SOCKS5');
       expect(controller.activeProfile.frontends.socks5, isFalse);
 
-      await toggle('Configure system proxy');
+      await toggle('System proxy');
       expect(controller.activeProfile.proxy.systemProxy, isTrue);
 
       await toggle('HTTP');
@@ -5033,7 +5033,7 @@ void main() {
       expect(find.text('VPN and local proxies'), findsOneWidget);
       expect(find.text('VPN'), findsOneWidget);
       expect(find.text('VPN (TUN)'), findsNothing);
-      expect(find.text('Configure system proxy'), findsNothing);
+      expect(find.text('System proxy'), findsNothing);
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
@@ -5086,7 +5086,7 @@ void main() {
       findsNothing,
     );
 
-    await tester.tap(find.byTooltip('Edit').first);
+    await tester.tap(find.byTooltip('Rename account').first);
     await tester.pumpAndSettle();
     expect(find.text('Rename account'), findsOneWidget);
     expect(find.text('Account name'), findsOneWidget);

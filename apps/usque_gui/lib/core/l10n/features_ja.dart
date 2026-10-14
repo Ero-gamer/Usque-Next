@@ -54,7 +54,6 @@ const Map<String, String> kUiWorkflowJa = <String, String>{
   'home_traffic_waiting': '通信量データを待っています',
   'home_traffic_unavailable': '通信量の履歴はありません',
   'home_traffic_stale': '通信量の更新が遅れています',
-  'home_outputs_next': '接続後に利用可能',
   'home_outputs_retry': '次回接続で使う VPN とプロキシ',
   'connection_protection_group': '接続と保護',
   'proxy_routing_group': 'プロキシとルーティング',

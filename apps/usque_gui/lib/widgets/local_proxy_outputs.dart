@@ -79,7 +79,7 @@ class LocalProxyOutputs extends StatelessWidget {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 secondary: const Icon(LucideIcons.monitorCog),
-                title: Text(strings.get('system_proxy')),
+                title: Text(strings.get('home_system_proxy')),
                 // Same rule and wording as Home: system proxy needs the HTTP
                 // listener, but one that is already on can always be turned off.
                 subtitle: Text(

@@ -139,6 +139,7 @@ const Map<String, String> kJaCatalog = <String, String>{
   'cancel': 'キャンセル',
   'active': 'アクティブ',
   'set_active': 'アクティブにする',
+  'switch_account_reconnect_body': '現在の接続は、このアカウントで再接続されます。',
   'edit': '編集',
   'delete': '削除',
   'delete_profile': 'アカウントを削除しますか？',
@@ -173,8 +174,6 @@ const Map<String, String> kJaCatalog = <String, String>{
   'dns_leak_warning': '要求した名前がローカル DNS に漏れる可能性があります',
   'dns_leak_warning_body':
       'ローカル DNS とシステム DNS は、問い合わせたドメインを現在のネットワークに公開する可能性があります。',
-  'system_proxy': 'システムプロキシを設定',
-  'output_disabled_in_profile': '設定で無効',
   'auto_connect': '起動時に現在のアカウントへ自動接続',
   'lan_warning': 'プロキシがローカルネットワークに公開されています',
   'lan_warning_body': 'ユーザー名とパスワードが設定されていません。このアドレスに接続できるすべての端末がプロキシを使用できます。',

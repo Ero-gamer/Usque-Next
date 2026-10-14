@@ -3,11 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:usque/models/app_models.dart';
 import 'package:usque/screens/proxy_screen.dart';
 import 'package:usque/state/app_controller.dart';
-import 'package:usque/widgets/vpn_gate_entry.dart';
+import 'package:usque/widgets/chain_proxy_entry.dart';
 
+import 'chain_proxy_test.dart' show ChainEngine, imported;
 import 'ui_workflow_test.dart' show workflowHost;
 import 'vpn_gate_summary_test.dart' show current;
 import 'vpngate_test.dart' show GateEngine, server;
@@ -54,17 +56,30 @@ AppController _controllerFor(_EntryEngine engine, {bool selected = true}) {
   return app;
 }
 
+Widget _entry(AppController app, {VoidCallback? onOpen}) => workflowHost(
+  app,
+  home: Scaffold(
+    body: ChainProxyEntry(controller: app, onOpen: onOpen ?? () {}),
+  ),
+);
+
 void main() {
-  final entry = find.byKey(const ValueKey('proxy-vpn-gate-entry'));
+  final entry = find.byKey(const ValueKey('proxy-chain-proxy-entry'));
+  final section = find.byKey(const ValueKey('proxy-chain-proxy-section'));
+  final selection = find.byKey(const ValueKey('proxy-chain-selection'));
+
+  String selectionText(WidgetTester tester) => tester
+      .widget<Text>(find.descendant(of: selection, matching: find.byType(Text)))
+      .textSpan!
+      .toPlainText();
 
   testWidgets(
-    'live Gate updates preserve listener drafts and platform readiness',
+    'live Gate updates preserve listener drafts and use chain wording',
     (tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(1220, 1000);
       addTearDown(tester.view.resetDevicePixelRatio);
       addTearDown(tester.view.resetPhysicalSize);
-      final entry = find.byKey(const ValueKey('proxy-chain-proxy-entry'));
       final engine = _EntryEngine();
       final app = _controllerFor(engine);
       addTearDown(app.dispose);
@@ -72,9 +87,15 @@ void main() {
         workflowHost(app, home: ProxyScreen(controller: app)),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Enabled · not connected'), findsOneWidget);
-      expect(find.text('Saved server'), findsOneWidget);
-      expect(find.textContaining(server.ip), findsOneWidget);
+      expect(
+        find.descendant(
+          of: section,
+          matching: find.text('Enabled · not connected'),
+        ),
+        findsOneWidget,
+      );
+      expect(selectionText(tester), contains(server.ip));
+      expect(selectionText(tester), startsWith('VPN Gate · '));
       final port = find.byWidgetPredicate(
         (widget) =>
             widget is TextFormField && widget.controller?.text == '1080',
@@ -82,14 +103,10 @@ void main() {
       expect(port, findsOneWidget);
       await tester.enterText(port, '9091');
       for (final (phase, stage, label) in [
-        (ConnectionPhase.preparing, 'connected', 'Applying network settings'),
+        (ConnectionPhase.preparing, 'connected', 'Connected'),
         (ConnectionPhase.connected, 'connected', 'Connected'),
         (ConnectionPhase.error, 'error', 'Connection failed'),
-        (
-          ConnectionPhase.disconnecting,
-          'error',
-          app.strings.get('disconnecting'),
-        ),
+        (ConnectionPhase.disconnecting, 'error', 'Disconnecting'),
       ]) {
         engine.current = EngineSnapshot(
           phase: phase,
@@ -98,15 +115,13 @@ void main() {
         await app.refreshSnapshot();
         await tester.pumpAndSettle();
         expect(
-          find.descendant(of: entry, matching: find.text(label)),
+          find.descendant(of: section, matching: find.text(label)),
           findsOneWidget,
         );
-        expect(find.textContaining(current.ip), findsOneWidget);
-        expect(find.textContaining(server.ip), findsNothing);
-        expect(
-          find.text('WARP → VPN Gate'),
-          phase == ConnectionPhase.connected ? findsOneWidget : findsNothing,
-        );
+        expect(selectionText(tester), contains(current.ip));
+        expect(selectionText(tester), isNot(contains(server.ip)));
+        // The path is the page's own subject; only Home names WARP → exit.
+        expect(find.textContaining('WARP →'), findsNothing);
         expect(find.text('9091'), findsOneWidget);
       }
       expect(engine.reads, 1);
@@ -126,23 +141,14 @@ void main() {
           vpnGate: VpnGateStatus(stage: 'connected', server: server),
         );
       addTearDown(app.dispose);
-      await tester.pumpWidget(
-        workflowHost(
-          app,
-          home: Scaffold(
-            body: VpnGateEntry(controller: app, onOpen: () {}),
-          ),
-        ),
-      );
+      await tester.pumpWidget(_entry(app));
       await tester.pumpAndSettle();
-      expect(find.text('Connected server'), findsOneWidget);
+      expect(find.text('Connected'), findsOneWidget);
       engine.current = const EngineSnapshot();
       await app.refreshSnapshot();
       await tester.pumpAndSettle();
-      expect(find.text('Saved server'), findsOneWidget);
-      expect(find.textContaining(server.ip), findsOneWidget);
+      expect(selectionText(tester), contains(server.ip));
       expect(find.text('Enabled · not connected'), findsOneWidget);
-      expect(find.text('WARP → VPN Gate'), findsNothing);
       expect(engine.reads, 0);
     },
   );
@@ -155,16 +161,9 @@ void main() {
     engine.pending = first;
     final app = _controllerFor(engine);
     addTearDown(app.dispose);
-    await tester.pumpWidget(
-      workflowHost(
-        app,
-        home: Scaffold(
-          body: VpnGateEntry(controller: app, onOpen: () {}),
-        ),
-      ),
-    );
+    await tester.pumpWidget(_entry(app));
     await tester.pumpAndSettle();
-    expect(find.text(server.id), findsOneWidget);
+    expect(selectionText(tester), contains(server.id));
     final second = Completer<VpnGateDirectory>();
     engine.pending = second;
     app.sharedNetwork = app.sharedNetwork.copyWith(
@@ -178,12 +177,11 @@ void main() {
     await tester.pump();
     first.complete(const VpnGateDirectory(savedServer: server));
     await tester.pumpAndSettle();
-    expect(find.textContaining(server.ip), findsNothing);
-    expect(find.text(current.id), findsOneWidget);
+    expect(selectionText(tester), isNot(contains(server.ip)));
+    expect(selectionText(tester), contains(current.id));
     second.complete(const VpnGateDirectory(savedServer: current));
     await tester.pumpAndSettle();
-    expect(find.textContaining(current.ip), findsOneWidget);
-    expect(find.text('Saved server'), findsOneWidget);
+    expect(selectionText(tester), contains(current.ip));
     engine.failRead = true;
     app.sharedNetwork = app.sharedNetwork.copyWith(
       vpnGate: VpnGateSettings(
@@ -194,31 +192,69 @@ void main() {
     );
     app.selectSection(AppSection.proxy);
     await tester.pumpAndSettle();
-    expect(find.text(server.id), findsOneWidget);
-    expect(find.textContaining(current.ip), findsNothing);
+    expect(selectionText(tester), contains(server.id));
+    expect(selectionText(tester), isNot(contains(current.ip)));
     expect(find.text('Enabled · not connected'), findsOneWidget);
     expect(tester.takeException(), isNull);
     expect(engine.reads, 3);
   });
 
+  testWidgets('saved reads wait until the Proxy section is visible', (
+    tester,
+  ) async {
+    final engine = _EntryEngine();
+    final app = _controllerFor(engine)..section = AppSection.home;
+    addTearDown(app.dispose);
+    await tester.pumpWidget(_entry(app));
+    await tester.pumpAndSettle();
+    expect(engine.reads, 0);
+    app.selectSection(AppSection.proxy);
+    await tester.pumpAndSettle();
+    expect(engine.reads, 1);
+    expect(selectionText(tester), contains(server.ip));
+  });
+
+  testWidgets('saved configurations show their name from the local library', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final engine = ChainEngine()..library = [imported];
+    engine.legacyProfilesImported = true;
+    engine.storedProfiles[0] = engine.storedProfiles[0].copyWith(
+      chainExit: ChainExitSettings(
+        enabled: true,
+        source: imported.source,
+        profileId: imported.id,
+        revision: imported.revision,
+      ),
+    );
+    final app = AppController(engine);
+    await app.initialize();
+    app
+      ..localePreference = LocalePreference.english
+      ..section = AppSection.proxy;
+    addTearDown(app.dispose);
+    await tester.pumpWidget(_entry(app));
+    await tester.pumpAndSettle();
+    expect(selectionText(tester), 'WireGuard · Office tunnel');
+    expect(find.text('Enabled · not connected'), findsOneWidget);
+    expect(find.text('Choose an exit reached through WARP.'), findsNothing);
+    expect(engine.actions.where((action) => action == 'list'), hasLength(1));
+  });
+
   testWidgets(
-    'disabled Gate remains reachable without directory reads or writes',
+    'disabled chain remains reachable without directory reads or writes',
     (tester) async {
       final engine = _EntryEngine();
       final app = _controllerFor(engine, selected: false);
       addTearDown(app.dispose);
       var opened = 0;
-      await tester.pumpWidget(
-        workflowHost(
-          app,
-          home: Scaffold(
-            body: VpnGateEntry(controller: app, onOpen: () => opened++),
-          ),
-        ),
-      );
+      await tester.pumpWidget(_entry(app, onOpen: () => opened++));
       await tester.pumpAndSettle();
-      expect(find.text('VPN Gate is off'), findsOneWidget);
-      await tester.tap(find.text('Manage servers'));
+      expect(find.text('Not enabled'), findsOneWidget);
+      expect(find.text('Choose an exit reached through WARP.'), findsOneWidget);
+      expect(selection, findsNothing);
+      await tester.tap(entry);
       expect(opened, 1);
       expect(engine.reads, 0);
       expect(engine.saves, 0);
@@ -254,7 +290,7 @@ void main() {
             scale: scale,
             home: Scaffold(
               body: SingleChildScrollView(
-                child: VpnGateEntry(controller: app, onOpen: () => opened++),
+                child: ChainProxyEntry(controller: app, onOpen: () => opened++),
               ),
             ),
           ),
@@ -271,12 +307,16 @@ void main() {
           isTrue,
         );
         buttonSemantics.dispose();
-        Focus.of(tester.element(find.text('VPN Gate'))).requestFocus();
+        Focus.of(
+          tester.element(
+            find.descendant(of: entry, matching: find.byType(Text)),
+          ),
+        ).requestFocus();
         await tester.pump();
         await tester.sendKeyEvent(LogicalKeyboardKey.select);
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
-        expect(tester.getSize(entry).width, lessThanOrEqualTo(size.width));
+        expect(tester.getSize(section).width, lessThanOrEqualTo(size.width));
       }
       expect(opened, 4);
     },

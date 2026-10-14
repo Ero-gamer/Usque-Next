@@ -29,7 +29,6 @@ import 'package:usque/widgets/connection_ring.dart';
 import 'package:usque/widgets/country_flag.dart';
 import 'package:usque/widgets/usque_dialog.dart';
 import 'package:usque/widgets/usque_logo.dart';
-import 'package:usque/widgets/vpn_gate_entry.dart';
 import 'package:usque/widgets/vpn_gate_server_row.dart';
 import 'package:usque/widgets/warp_dns_editor.dart';
 import 'package:usque/widgets/window_titlebar.dart';
@@ -451,7 +450,7 @@ void main() {
     }
   }, tags: 'golden');
 
-  testWidgets('VPN Gate proxy entry on desktop and phone', (tester) async {
+  testWidgets('VPN Gate chain entry on desktop and phone', (tester) async {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
@@ -477,7 +476,7 @@ void main() {
                 padding: const EdgeInsets.all(16),
                 child: RepaintBoundary(
                   key: boundary,
-                  child: VpnGateEntry(controller: app, onOpen: () {}),
+                  child: ChainProxyEntry(controller: app, onOpen: () {}),
                 ),
               ),
             ),
@@ -486,7 +485,7 @@ void main() {
         await tester.runAsync(
           () => precacheImage(
             const AssetImage('assets/flags/w80/jp.png'),
-            tester.element(find.byType(VpnGateEntry)),
+            tester.element(find.byType(ChainProxyEntry)),
           ),
         );
         await tester.pumpAndSettle();

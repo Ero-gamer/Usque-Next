@@ -57,7 +57,6 @@ const Map<String, String> kUiWorkflowVi = <String, String>{
   'home_traffic_waiting': 'Đang chờ dữ liệu lưu lượng',
   'home_traffic_unavailable': 'Chưa có lịch sử lưu lượng',
   'home_traffic_stale': 'Cập nhật lưu lượng bị chậm',
-  'home_outputs_next': 'Có thể dùng sau khi kết nối',
   'home_outputs_retry': 'VPN và proxy cho lần kết nối tiếp theo',
   'connection_protection_group': 'Kết nối & bảo vệ',
   'proxy_routing_group': 'Proxy & định tuyến',

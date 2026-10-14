@@ -150,6 +150,8 @@ const Map<String, String> kUkCatalog = <String, String>{
   'cancel': 'Скасувати',
   'active': 'Активний',
   'set_active': 'Зробити активним',
+  'switch_account_reconnect_body':
+      'Поточне підключення буде відновлено з цим обліковим записом.',
   'edit': 'Редагувати',
   'delete': 'Видалити',
   'delete_profile': 'Видалити обліковий запис?',
@@ -184,8 +186,6 @@ const Map<String, String> kUkCatalog = <String, String>{
   'dns_leak_warning': 'Локальний DNS може розкривати запитувані імена',
   'dns_leak_warning_body':
       'Локальний і системний DNS можуть розкривати запитані домени поточній мережі.',
-  'system_proxy': 'Налаштувати системний проксі',
-  'output_disabled_in_profile': 'Вимкнено в Налаштуваннях',
   'auto_connect':
       'Автоматично зʼєднувати поточний обліковий запис під час запуску',
   'lan_warning': 'Проксі відкрито для локальної мережі',

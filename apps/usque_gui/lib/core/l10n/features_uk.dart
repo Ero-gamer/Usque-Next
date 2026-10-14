@@ -60,7 +60,6 @@ const Map<String, String> kUiWorkflowUk = <String, String>{
   'home_traffic_waiting': 'Очікування даних про трафік',
   'home_traffic_unavailable': 'Історії трафіку немає',
   'home_traffic_stale': 'Оновлення даних про трафік затримуються',
-  'home_outputs_next': 'Доступно після підключення',
   'home_outputs_retry': 'VPN і проксі для наступного з’єднання',
   'connection_protection_group': 'Зʼєднання і захист',
   'proxy_routing_group': 'Проксі та маршрути',

@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../core/connection_presentation.dart';
 import '../core/diagnostics_strings.dart';
+import '../core/legal_links.dart';
 import '../core/usque_theme.dart';
 import '../models/app_models.dart';
 import '../models/diagnostics_models.dart';
@@ -220,11 +221,8 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                     Align(
                       alignment: AlignmentDirectional.centerEnd,
                       child: OutlinedButton.icon(
-                        onPressed: () => openExternalLink(
-                          context,
-                          strings,
-                          'https://github.com/GeorgeXie2333/usque-app',
-                        ),
+                        onPressed: () =>
+                            openExternalLink(context, strings, kSourceCodeUrl),
                         icon: const Icon(LucideIcons.code2),
                         label: Text(strings.get('source_code')),
                       ),

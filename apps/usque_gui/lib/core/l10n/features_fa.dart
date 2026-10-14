@@ -56,7 +56,6 @@ const Map<String, String> kUiWorkflowFa = <String, String>{
   'home_traffic_waiting': 'در انتظار داده‌های ترافیک',
   'home_traffic_unavailable': 'سابقهٔ ترافیکی وجود ندارد',
   'home_traffic_stale': 'به‌روزرسانی ترافیک با تأخیر انجام می‌شود',
-  'home_outputs_next': 'پس از اتصال در دسترس است',
   'home_outputs_retry': 'VPN و پروکسی‌های اتصال بعدی',
   'connection_protection_group': 'اتصال و حفاظت',
   'proxy_routing_group': 'پروکسی و مسیریابی',

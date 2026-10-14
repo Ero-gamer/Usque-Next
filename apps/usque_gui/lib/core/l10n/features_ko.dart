@@ -54,7 +54,6 @@ const Map<String, String> kUiWorkflowKo = <String, String>{
   'home_traffic_waiting': '트래픽 데이터 대기 중',
   'home_traffic_unavailable': '트래픽 기록 없음',
   'home_traffic_stale': '트래픽 업데이트 지연',
-  'home_outputs_next': '연결 후 사용 가능',
   'home_outputs_retry': '다음 연결에서 사용할 VPN 및 프록시',
   'connection_protection_group': '연결 및 보호',
   'proxy_routing_group': '프록시 및 라우팅',

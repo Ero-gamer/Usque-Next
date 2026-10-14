@@ -241,7 +241,7 @@ void main() {
     },
   );
 
-  testWidgets('primary pages reserve the sole shortcut card for chain proxy', (
+  testWidgets('primary pages use open sections without shortcut cards', (
     tester,
   ) async {
     for (final section in AppSection.values) {
@@ -252,16 +252,15 @@ void main() {
       try {
         await tester.pumpWidget(workflowHost(app));
         await tester.pumpAndSettle();
+        expect(find.byType(Panel), findsNothing, reason: section.name);
         if (section == AppSection.proxy) {
+          final chain = find.byKey(const ValueKey('proxy-chain-proxy-section'));
           final entry = find.byKey(const ValueKey('proxy-chain-proxy-entry'));
-          expect(find.byType(Panel), findsOneWidget);
-          expect(tester.widget<Panel>(entry).onTap, isNotNull);
+          expect(tester.widget<TextButton>(entry).onPressed, isNotNull);
           expect(
-            find.descendant(of: entry, matching: find.text('Chain proxy')),
+            find.descendant(of: chain, matching: find.text('Chain proxy')),
             findsOneWidget,
           );
-        } else {
-          expect(find.byType(Panel), findsNothing, reason: section.name);
         }
         expect(find.byType(StatusPill), findsNothing, reason: section.name);
         expect(tester.takeException(), isNull);

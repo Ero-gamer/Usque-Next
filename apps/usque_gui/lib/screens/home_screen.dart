@@ -11,6 +11,7 @@ import '../core/usque_theme.dart';
 import '../models/app_models.dart';
 import '../models/network_quality_models.dart';
 import '../state/app_controller.dart';
+import '../widgets/chain_exit_summary.dart';
 import '../widgets/common.dart';
 import '../widgets/connection_ring.dart';
 import '../widgets/controller_selector.dart';
@@ -42,10 +43,13 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppStrings strings = controller.strings;
     final viewport = MediaQuery.sizeOf(context);
+    // Windows always keeps the desktop sections; a narrow window stacks them
+    // instead of dropping the output switches and local proxies.
     final bool compact =
-        viewport.width < 760 ||
-        defaultTargetPlatform == TargetPlatform.android &&
-            viewport.shortestSide < 600;
+        defaultTargetPlatform != TargetPlatform.windows &&
+        (viewport.width < 760 ||
+            defaultTargetPlatform == TargetPlatform.android &&
+                viewport.shortestSide < 600);
     void openChainProxy() => Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => ChainProxyScreen(controller: controller),
@@ -60,12 +64,11 @@ class HomeScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             notice,
-            if (defaultTargetPlatform == TargetPlatform.android)
-              _VpnGateReadout(
-                controller: controller,
-                strings: strings,
-                onOpen: onOpenChainProxy ?? openChainProxy,
-              ),
+            _ChainSummary(
+              controller: controller,
+              strings: strings,
+              onOpen: onOpenChainProxy ?? openChainProxy,
+            ),
             PanelStack(
               spacing: 24 + mobileHomeExpansion(context) * 8,
               children: [
@@ -159,10 +162,6 @@ class _DesktopHomeConnection extends StatelessWidget {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       final hero = _ConnectionHero(controller: controller, strings: strings);
-      final controls = HomeDesktopControls(
-        controller: controller,
-        onOpenChainProxy: onOpenChainProxy,
-      );
       if (constraints.maxWidth >= 860 &&
           MediaQuery.textScalerOf(context).scale(14) <= 21) {
         final controlWidth = constraints.maxWidth >= 940 ? 320.0 : 280.0;
@@ -171,14 +170,41 @@ class _DesktopHomeConnection extends StatelessWidget {
           children: [
             Expanded(child: hero),
             const SizedBox(width: 32),
-            SizedBox(width: controlWidth, child: controls),
+            SizedBox(
+              width: controlWidth,
+              child: HomeDesktopControls(
+                controller: controller,
+                onOpenChainProxy: onOpenChainProxy,
+                minHeight: _desktopRingSize(
+                  context,
+                  constraints.maxWidth - 32 - controlWidth,
+                ),
+              ),
+            ),
           ],
         );
       }
-      return PanelStack(spacing: 32, children: [hero, controls]);
+      return PanelStack(
+        spacing: 32,
+        children: [
+          hero,
+          HomeDesktopControls(
+            controller: controller,
+            onOpenChainProxy: onOpenChainProxy,
+          ),
+        ],
+      );
     },
   );
 }
+
+/// Diameter of the desktop ring beside its readouts, or null when the hero
+/// is too narrow (or its text too large) and stacks the ring above them.
+/// The output switches use the same value to share the ring's height.
+double? _desktopRingSize(BuildContext context, double heroWidth) =>
+    heroWidth >= 560 && MediaQuery.textScalerOf(context).scale(14) <= 21
+    ? (heroWidth - 220 - 24).clamp(224.0, 330.0)
+    : null;
 
 typedef _LocalProxiesView = ({
   bool http,
@@ -337,8 +363,11 @@ class _NarrowBrandHeader extends StatelessWidget {
   }
 }
 
-class _VpnGateReadout extends StatelessWidget {
-  const _VpnGateReadout({
+/// Phone summary of the chain above the connection control. The ring and
+/// headline below already carry the overall status, so this names the path,
+/// the chosen exit and the WARP hop only.
+class _ChainSummary extends StatelessWidget {
+  const _ChainSummary({
     required this.controller,
     required this.strings,
     required this.onOpen,
@@ -351,128 +380,102 @@ class _VpnGateReadout extends StatelessWidget {
   Widget build(BuildContext context) =>
       ControllerSelector<
         ({
-          bool enabled,
+          bool show,
           ConnectionPhase phase,
-          VpnGateStatus status,
-          ChainExitStatus chain,
-          ChainSource source,
-          ChainScopePresentation scope,
+          String chainStage,
+          String gateStage,
+          String? reportedWarpStage,
         })
       >(
         controller: controller,
         active: (app) => app.section == AppSection.home,
-        selector: (app) => (
-          enabled: app.activeProfile.chainEnabled,
-          phase: app.snapshot.phase,
-          status: app.snapshot.vpnGate,
-          chain: app.snapshot.chainExit,
-          source: app.activeProfile.chainSource,
-          scope: ChainScopePresentation.of(
-            app.snapshot,
+        selector: (app) {
+          final snapshot = app.snapshot;
+          final homeStatus = ChainHomeStatus.of(
+            phase: snapshot.phase,
+            chainEnabled: app.activeProfile.chainEnabled,
+            chainStage: snapshot.chainExit.stage,
+            gateStage: snapshot.vpnGate.stage,
+            hasCurrentProfile: snapshot.chainExit.currentProfile != null,
+            hasGateServer: snapshot.vpnGate.server != null,
+          );
+          final scope = ChainScopePresentation.of(
+            snapshot,
             app.networkSettings.state?.appliedProfile,
             isAndroid: defaultTargetPlatform == TargetPlatform.android,
-          ),
-        ),
-        builder: (context, view) {
-          final homeStatus = ChainHomeStatus.of(
-            phase: view.phase,
-            chainEnabled: view.enabled,
-            chainStage: view.chain.stage,
-            gateStage: view.status.stage,
-            hasCurrentProfile: view.chain.currentProfile != null,
-            hasGateServer: view.status.server != null,
           );
-          if (!homeStatus.showChainRow && view.scope.isEmpty) {
-            return const SizedBox.shrink();
-          }
-          final status = view.status;
-          final server = status.server;
+          return (
+            show: homeStatus.showChainRow || !scope.isEmpty,
+            phase: snapshot.phase,
+            chainStage: snapshot.chainExit.stage,
+            gateStage: snapshot.vpnGate.stage,
+            reportedWarpStage:
+                snapshot.chainExit.warpStage ?? snapshot.vpnGate.warpStage,
+          );
+        },
+        builder: (context, view) {
+          if (!view.show) return const SizedBox.shrink();
+          final theme = Theme.of(context);
           final warpKey = ChainHomeStatus.warpLabelKey(
             phase: view.phase,
-            chainStage: view.chain.stage,
-            gateStage: status.stage,
-            reportedStage: view.chain.warpStage ?? status.warpStage,
+            chainStage: view.chainStage,
+            gateStage: view.gateStage,
+            reportedStage: view.reportedWarpStage,
           );
-          final phaseLabel =
-              !homeStatus.showChainRow && view.phase == ConnectionPhase.error
-              ? strings.get('error')
-              : homeStatus.label(strings);
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 24),
-            child: Semantics(
-              container: true,
-              liveRegion: true,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: TextButton(
-                      key: const ValueKey('home-vpn-gate-settings'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: Theme.of(
-                          context,
-                        ).colorScheme.onSurface,
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        alignment: AlignmentDirectional.centerStart,
-                      ),
-                      onPressed: onOpen,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Flexible(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'WARP → ${view.chain.currentProfile?.name ?? view.scope.source?.label ?? view.source.label}',
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium,
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  phaseLabel,
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
-                                      ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          const Icon(LucideIcons.chevronRight, size: 18),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'WARP: ${warpKey == null ? '—' : strings.get(warpKey)}',
-                    key: const ValueKey('home-chain-warp-status'),
-                  ),
-                  if (view.chain.currentProfile case final current?)
-                    Text(current.source.label),
-                  if (server != null && view.chain.currentProfile == null)
-                    Row(
-                      children: [
-                        CountryFlag(countryCode: server.countryCode),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '${strings.get(status.connected ? 'gate_current' : 'gate_draft')}: ${server.countryCode ?? '—'} · ${server.ip}',
-                            style: const TextStyle(
-                              fontFeatures: UsqueTheme.tabularFigures,
-                            ),
-                          ),
+          return ChainExitSummaryBuilder(
+            controller: controller,
+            section: AppSection.home,
+            builder: (context, chain) => Padding(
+              padding: const EdgeInsets.only(bottom: 24),
+              child: Semantics(
+                container: true,
+                liveRegion: true,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: TextButton(
+                        key: const ValueKey('home-vpn-gate-settings'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: theme.colorScheme.onSurface,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          alignment: AlignmentDirectional.centerStart,
                         ),
-                      ],
+                        onPressed: onOpen,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                'WARP → ${chain.source.label}',
+                                style: theme.textTheme.titleMedium,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Icon(LucideIcons.chevronRightDir, size: 18),
+                          ],
+                        ),
+                      ),
                     ),
-                ],
+                    if (chain.selection != null) ...[
+                      ChainSelectionText(
+                        chain,
+                        key: const ValueKey('home-chain-selection'),
+                        showSource: false,
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 4),
+                    ],
+                    Text(
+                      'WARP: ${warpKey == null ? '—' : strings.get(warpKey)}',
+                      key: const ValueKey('home-chain-warp-status'),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           );
@@ -737,11 +740,8 @@ class _ConnectionHero extends StatelessWidget {
       key: const ValueKey('home-desktop-connection'),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final split =
-              constraints.maxWidth >= 560 &&
-              MediaQuery.textScalerOf(context).scale(14) <= 21;
-          if (split) {
-            final size = (constraints.maxWidth - 220 - 24).clamp(224.0, 330.0);
+          if (_desktopRingSize(context, constraints.maxWidth)
+              case final size?) {
             return Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

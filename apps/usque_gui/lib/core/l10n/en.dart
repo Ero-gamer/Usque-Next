@@ -147,6 +147,8 @@ const Map<String, String> kEnCatalog = <String, String>{
   'cancel': 'Cancel',
   'active': 'Active',
   'set_active': 'Set active',
+  'switch_account_reconnect_body':
+      'The current connection will reconnect using this account.',
   'edit': 'Edit',
   'delete': 'Delete',
   'delete_profile': 'Remove account?',
@@ -181,8 +183,6 @@ const Map<String, String> kEnCatalog = <String, String>{
   'dns_leak_warning': 'Local DNS may reveal requested names',
   'dns_leak_warning_body':
       'Local and system DNS may reveal requested domains to your current network.',
-  'system_proxy': 'Configure system proxy',
-  'output_disabled_in_profile': 'Disabled in Settings',
   'auto_connect': 'Connect the current account automatically on start',
   'lan_warning': 'Proxy exposed to the local network',
   'lan_warning_body':

@@ -54,7 +54,6 @@ const Map<String, String> kUiWorkflowZhHk = <String, String>{
   'home_traffic_waiting': '等待流量資料',
   'home_traffic_unavailable': '尚無流量紀錄',
   'home_traffic_stale': '流量更新延遲',
-  'home_outputs_next': '連接後可用',
   'home_outputs_retry': '下次連接使用的 VPN 和代理',
   'connection_protection_group': '連線與保護',
   'proxy_routing_group': '代理與分流',

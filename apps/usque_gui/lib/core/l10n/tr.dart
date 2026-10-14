@@ -151,6 +151,8 @@ const Map<String, String> kTrCatalog = <String, String>{
   'cancel': 'İptal',
   'active': 'Etkin',
   'set_active': 'Etkin yap',
+  'switch_account_reconnect_body':
+      'Mevcut bağlantı bu hesapla yeniden kurulacak.',
   'edit': 'Düzenle',
   'delete': 'Sil',
   'delete_profile': 'Hesap kaldırılsın mı?',
@@ -186,8 +188,6 @@ const Map<String, String> kTrCatalog = <String, String>{
   'dns_leak_warning': 'Yerel DNS, istenen adları açığa çıkarabilir',
   'dns_leak_warning_body':
       'Yerel ve sistem DNS’i, istenen alan adlarını mevcut ağınıza gösterebilir.',
-  'system_proxy': 'Sistem proxy’sini yapılandır',
-  'output_disabled_in_profile': 'Ayarlarda devre dışı',
   'auto_connect': 'Başlangıçta geçerli hesaba otomatik bağlan',
   'lan_warning': 'Proxy yerel ağa açık',
   'lan_warning_body':

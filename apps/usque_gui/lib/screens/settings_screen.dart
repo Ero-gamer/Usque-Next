@@ -9,6 +9,7 @@ import '../state/app_controller.dart';
 import '../widgets/common.dart';
 import '../widgets/external_link.dart';
 import '../widgets/usque_dialog.dart';
+import 'about_screen.dart';
 import 'advanced_settings_screen.dart';
 import 'diagnostics_screen.dart';
 import 'geo_direct_settings_screen.dart';
@@ -271,6 +272,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         const SizedBox(height: 6),
                         _UpdateActions(controller: controller),
                       ],
+                    ),
+                    LinkRow(
+                      key: const ValueKey('settings-about'),
+                      icon: LucideIcons.info,
+                      title: MaterialLocalizations.of(
+                        context,
+                      ).aboutListTileTitle('Usque'),
+                      onTap: () =>
+                          _open(context, AboutScreen(controller: controller)),
                     ),
                   ],
                 ),

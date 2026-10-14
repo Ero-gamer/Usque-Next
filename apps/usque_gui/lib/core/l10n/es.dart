@@ -154,6 +154,8 @@ const Map<String, String> kEsCatalog = <String, String>{
   'cancel': 'Cancelar',
   'active': 'Activo',
   'set_active': 'Establecer como activo',
+  'switch_account_reconnect_body':
+      'La conexión actual se restablecerá con esta cuenta.',
   'edit': 'Editar',
   'delete': 'Eliminar',
   'delete_profile': '¿Eliminar cuenta?',
@@ -189,8 +191,6 @@ const Map<String, String> kEsCatalog = <String, String>{
   'dns_leak_warning': 'El DNS local puede revelar los nombres solicitados',
   'dns_leak_warning_body':
       'El DNS local y del sistema puede revelar los dominios solicitados a tu red actual.',
-  'system_proxy': 'Configurar el proxy del sistema',
-  'output_disabled_in_profile': 'Desactivado en Ajustes',
   'auto_connect': 'Conectar la cuenta actual automáticamente al iniciar',
   'lan_warning': 'Proxy expuesto a la red local',
   'lan_warning_body':

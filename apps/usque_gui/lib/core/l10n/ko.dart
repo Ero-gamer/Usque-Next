@@ -138,6 +138,7 @@ const Map<String, String> kKoCatalog = <String, String>{
   'cancel': '취소',
   'active': '활성',
   'set_active': '활성으로 설정',
+  'switch_account_reconnect_body': '현재 연결이 이 계정으로 다시 연결됩니다.',
   'edit': '편집',
   'delete': '삭제',
   'delete_profile': '계정을 삭제할까요?',
@@ -171,8 +172,6 @@ const Map<String, String> kKoCatalog = <String, String>{
   'proxy_dns_system': '시스템 DNS',
   'dns_leak_warning': '로컬 DNS가 요청한 이름을 노출할 수 있습니다',
   'dns_leak_warning_body': '로컬 및 시스템 DNS는 요청한 도메인을 현재 네트워크에 노출할 수 있습니다.',
-  'system_proxy': '시스템 프록시 구성',
-  'output_disabled_in_profile': '설정에서 사용 안 함',
   'auto_connect': '시작 시 현재 계정을 자동으로 연결합니다',
   'lan_warning': '프록시가 로컬 네트워크에 노출되어 있습니다',
   'lan_warning_body':

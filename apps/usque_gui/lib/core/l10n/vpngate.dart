@@ -1,6 +1,5 @@
 // VPN Gate copy follows the same catalog IDs as AppStrings.
 const kVpnGateEn = <String, String>{
-  "gate_manage": "Manage servers",
   "gate_enabled_idle": "Enabled · not connected",
   "gate_saved_server": "Saved server",
   "gate_node_details": "Details",
@@ -48,7 +47,6 @@ const kVpnGateEn = <String, String>{
   "gate_favorites_empty": "No saved favorites yet",
   "gate_quality_scope":
       "Traffic is measured at VPN Gate. RTT, loss and transport metrics describe the WARP connection to Cloudflare.",
-  "gate_subtitle": "Choose the final exit for proxied traffic",
   "gate_scope":
       "Direct rules remain active. Proxied traffic stops if VPN Gate fails.",
   "gate_current": "Connected server",
@@ -94,7 +92,6 @@ const kVpnGateEn = <String, String>{
 const kVpnGateCatalogs = <String, Map<String, String>>{
   "en": kVpnGateEn,
   "zh_CN": {
-    "gate_manage": "管理服务器",
     "gate_enabled_idle": "已启用 · 未连接",
     "gate_saved_server": "已保存的服务器",
     "gate_node_details": "详情",
@@ -140,7 +137,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_favorites_empty": "尚未收藏服务器",
     "gate_quality_scope":
         "流量统计来自 VPN Gate；RTT、丢包及传输指标反映 WARP 到 Cloudflare 的连接。",
-    "gate_subtitle": "选择代理流量的最终出口",
     "gate_scope": "直连规则仍然生效。VPN Gate 故障时，代理流量停止。",
     "gate_current": "当前连接的服务器",
     "gate_draft": "待应用选择",
@@ -178,7 +174,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_configuring_network": "正在应用网络配置",
   },
   "zh_TW": {
-    "gate_manage": "管理伺服器",
     "gate_enabled_idle": "已啟用 · 未連線",
     "gate_saved_server": "已儲存的伺服器",
     "gate_node_details": "詳細資料",
@@ -224,7 +219,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_favorites_empty": "尚未收藏伺服器",
     "gate_quality_scope":
         "流量統計來自 VPN Gate；RTT、封包遺失及傳輸指標反映 WARP 到 Cloudflare 的連線。",
-    "gate_subtitle": "選擇代理流量的最終出口",
     "gate_scope": "直連規則仍然生效。VPN Gate 故障時，代理流量停止。",
     "gate_current": "目前連線的伺服器",
     "gate_draft": "待套用選擇",
@@ -262,7 +256,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_configuring_network": "正在套用網路設定",
   },
   "ja": {
-    "gate_manage": "サーバーを管理",
     "gate_enabled_idle": "有効 · 未接続",
     "gate_saved_server": "保存済みサーバー",
     "gate_node_details": "詳細",
@@ -308,7 +301,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_favorites_empty": "お気に入りはまだありません",
     "gate_quality_scope":
         "トラフィックは VPN Gate で計測します。RTT、損失率、転送指標は WARP と Cloudflare 間の接続を示します。",
-    "gate_subtitle": "プロキシ通信の最終出口を選択",
     "gate_scope": "直接接続のルールは有効です。VPN Gate の障害時はプロキシ通信を停止します。",
     "gate_current": "接続中のサーバー",
     "gate_draft": "適用待ちの選択",
@@ -346,7 +338,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_configuring_network": "ネットワーク設定を適用中",
   },
   "ko": {
-    "gate_manage": "서버 관리",
     "gate_enabled_idle": "활성화됨 · 연결 안 됨",
     "gate_saved_server": "저장된 서버",
     "gate_node_details": "상세 정보",
@@ -392,7 +383,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_favorites_empty": "저장된 즐겨찾기가 없습니다",
     "gate_quality_scope":
         "트래픽은 VPN Gate에서 측정합니다. RTT, 손실 및 전송 지표는 WARP와 Cloudflare 간 연결을 나타냅니다.",
-    "gate_subtitle": "프록시 트래픽의 최종 출구 선택",
     "gate_scope": "직접 연결 규칙은 유지됩니다. VPN Gate 실패 시 프록시 트래픽이 중단됩니다.",
     "gate_current": "연결된 서버",
     "gate_draft": "적용 대기 중인 선택",
@@ -431,7 +421,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_configuring_network": "네트워크 설정 적용 중",
   },
   "es": {
-    "gate_manage": "Gestionar servidores",
     "gate_enabled_idle": "Activado · sin conectar",
     "gate_saved_server": "Servidor guardado",
     "gate_node_details": "Detalles",
@@ -479,7 +468,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_favorites_empty": "Aún no hay favoritos guardados",
     "gate_quality_scope":
         "El tráfico se mide en VPN Gate. El RTT, la pérdida y las métricas de transporte corresponden a la conexión de WARP con Cloudflare.",
-    "gate_subtitle": "Elige la salida final del tráfico por proxy",
     "gate_scope":
         "Las reglas de conexión directa siguen activas. Si VPN Gate falla, el tráfico por proxy se detiene.",
     "gate_current": "Servidor conectado",
@@ -522,7 +510,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_configuring_network": "Aplicando ajustes de red",
   },
   "pt": {
-    "gate_manage": "Gerir servidores",
     "gate_enabled_idle": "Ativado · sem ligação",
     "gate_saved_server": "Servidor guardado",
     "gate_node_details": "Detalhes",
@@ -570,7 +557,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_favorites_empty": "Ainda não há favoritos salvos",
     "gate_quality_scope":
         "O tráfego é medido no VPN Gate. RTT, perda e métricas de transporte descrevem a ligação WARP ao Cloudflare.",
-    "gate_subtitle": "Escolha a saída final do tráfego por proxy",
     "gate_scope":
         "As regras de ligação direta continuam ativas. Se o VPN Gate falhar, o tráfego por proxy para.",
     "gate_current": "Servidor ligado",
@@ -613,7 +599,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_configuring_network": "A aplicar definições de rede",
   },
   "fr": {
-    "gate_manage": "Gérer les serveurs",
     "gate_enabled_idle": "Activé · non connecté",
     "gate_saved_server": "Serveur enregistré",
     "gate_node_details": "Détails",
@@ -661,7 +646,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_favorites_empty": "Aucun favori enregistré",
     "gate_quality_scope":
         "Le trafic est mesuré au niveau de VPN Gate. Le RTT, les pertes et les indicateurs de transport concernent la connexion WARP à Cloudflare.",
-    "gate_subtitle": "Choisir la sortie finale du trafic via proxy",
     "gate_scope":
         "Les règles de connexion directe restent actives. Si VPN Gate échoue, le trafic via proxy est interrompu.",
     "gate_current": "Serveur connecté",
@@ -704,7 +688,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_configuring_network": "Application des paramètres réseau",
   },
   "nl": {
-    "gate_manage": "Servers beheren",
     "gate_enabled_idle": "Ingeschakeld · niet verbonden",
     "gate_saved_server": "Opgeslagen server",
     "gate_node_details": "Meer informatie",
@@ -753,7 +736,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_favorites_empty": "Nog geen opgeslagen favorieten",
     "gate_quality_scope":
         "Verkeer wordt gemeten bij VPN Gate. RTT, verlies en transportmetingen betreffen de WARP-verbinding met Cloudflare.",
-    "gate_subtitle": "Kies de uiteindelijke uitgang voor proxyverkeer",
     "gate_scope":
         "Regels voor directe verbindingen blijven actief. Bij een VPN Gate-storing stopt het proxyverkeer.",
     "gate_current": "Verbonden server",
@@ -796,7 +778,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_configuring_network": "Netwerkinstellingen toepassen",
   },
   "tr": {
-    "gate_manage": "Sunucuları yönet",
     "gate_enabled_idle": "Etkin · bağlı değil",
     "gate_saved_server": "Kayıtlı sunucu",
     "gate_node_details": "Ayrıntılar",
@@ -844,7 +825,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_favorites_empty": "Henüz kayıtlı favori yok",
     "gate_quality_scope":
         "Trafik VPN Gate üzerinde ölçülür. RTT, kayıp ve aktarım ölçümleri WARP ile Cloudflare arasındaki bağlantıya aittir.",
-    "gate_subtitle": "Proxy trafiğinin son çıkışını seçin",
     "gate_scope":
         "Doğrudan bağlantı kuralları etkin kalır. VPN Gate başarısız olursa proxy trafiği durur.",
     "gate_current": "Bağlı sunucu",
@@ -886,7 +866,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_configuring_network": "Ağ ayarları uygulanıyor",
   },
   "ru": {
-    "gate_manage": "Управление серверами",
     "gate_enabled_idle": "Включено · не подключено",
     "gate_saved_server": "Сохранённый сервер",
     "gate_node_details": "Подробности",
@@ -934,7 +913,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_favorites_empty": "Избранных серверов пока нет",
     "gate_quality_scope":
         "Трафик измеряется на уровне VPN Gate. RTT, потери и транспортные показатели относятся к соединению WARP с Cloudflare.",
-    "gate_subtitle": "Выберите конечный выход для прокси-трафика",
     "gate_scope":
         "Правила прямого подключения сохраняются. При сбое VPN Gate прокси-трафик останавливается.",
     "gate_current": "Подключённый сервер",
@@ -977,7 +955,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_configuring_network": "Применение настроек сети",
   },
   "de": {
-    "gate_manage": "Server verwalten",
     "gate_enabled_idle": "Aktiviert · nicht verbunden",
     "gate_saved_server": "Gespeicherter Server",
     "gate_node_details": "Einzelheiten",
@@ -1027,7 +1004,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_favorites_empty": "Noch keine Favoriten gespeichert",
     "gate_quality_scope":
         "Der Datenverkehr wird bei VPN Gate gemessen. RTT, Verlust und Transportwerte beziehen sich auf die WARP-Verbindung zu Cloudflare.",
-    "gate_subtitle": "Endgültigen Ausgang für Proxyverkehr auswählen",
     "gate_scope":
         "Regeln für Direktverbindungen bleiben aktiv. Bei einem VPN Gate-Fehler stoppt der Proxyverkehr.",
     "gate_current": "Verbundener Server",
@@ -1070,7 +1046,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_configuring_network": "Netzwerkeinstellungen werden angewendet",
   },
   "id": {
-    "gate_manage": "Kelola server",
     "gate_enabled_idle": "Diaktifkan · belum terhubung",
     "gate_saved_server": "Server tersimpan",
     "gate_node_details": "Rincian",
@@ -1118,7 +1093,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_favorites_empty": "Belum ada favorit tersimpan",
     "gate_quality_scope":
         "Lalu lintas diukur pada VPN Gate. RTT, kehilangan paket, dan metrik transportasi menggambarkan koneksi WARP ke Cloudflare.",
-    "gate_subtitle": "Pilih jalur keluar akhir untuk trafik proksi",
     "gate_scope":
         "Aturan koneksi langsung tetap aktif. Jika VPN Gate gagal, trafik proksi berhenti.",
     "gate_current": "Server terhubung",
@@ -1161,7 +1135,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_configuring_network": "Menerapkan pengaturan jaringan",
   },
   "it": {
-    "gate_manage": "Gestisci server",
     "gate_enabled_idle": "Attivo · non connesso",
     "gate_saved_server": "Server salvato",
     "gate_node_details": "Dettagli",
@@ -1209,7 +1182,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_favorites_empty": "Nessun preferito salvato",
     "gate_quality_scope":
         "Il traffico è misurato su VPN Gate. RTT, perdite e metriche di trasporto descrivono la connessione WARP a Cloudflare.",
-    "gate_subtitle": "Scegli l’uscita finale del traffico proxy",
     "gate_scope":
         "Le regole di connessione diretta restano attive. Se VPN Gate non funziona, il traffico proxy si interrompe.",
     "gate_current": "Server connesso",
@@ -1252,7 +1224,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_configuring_network": "Applicazione delle impostazioni di rete",
   },
   "pl": {
-    "gate_manage": "Zarządzaj serwerami",
     "gate_enabled_idle": "Włączono · brak połączenia",
     "gate_saved_server": "Zapisany serwer",
     "gate_node_details": "Szczegóły",
@@ -1300,7 +1271,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_favorites_empty": "Brak zapisanych ulubionych",
     "gate_quality_scope":
         "Ruch jest mierzony na poziomie VPN Gate. RTT, straty i metryki transportu dotyczą połączenia WARP z Cloudflare.",
-    "gate_subtitle": "Wybierz końcowe wyjście ruchu proxy",
     "gate_scope":
         "Reguły połączeń bezpośrednich pozostają aktywne. Awaria VPN Gate zatrzymuje ruch proxy.",
     "gate_current": "Połączony serwer",
@@ -1343,7 +1313,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_configuring_network": "Stosowanie ustawień sieci",
   },
   "uk": {
-    "gate_manage": "Керування серверами",
     "gate_enabled_idle": "Увімкнено · не підключено",
     "gate_saved_server": "Збережений сервер",
     "gate_node_details": "Подробиці",
@@ -1391,7 +1360,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_favorites_empty": "Обраних серверів ще немає",
     "gate_quality_scope":
         "Трафік вимірюється на рівні VPN Gate. RTT, втрати й транспортні показники стосуються з’єднання WARP з Cloudflare.",
-    "gate_subtitle": "Виберіть кінцевий вихід проксі-трафіку",
     "gate_scope":
         "Правила прямих з’єднань залишаються активними. У разі збою VPN Gate проксі-трафік зупиняється.",
     "gate_current": "Підключений сервер",
@@ -1434,7 +1402,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_configuring_network": "Застосування налаштувань мережі",
   },
   "vi": {
-    "gate_manage": "Quản lý máy chủ",
     "gate_enabled_idle": "Đã bật · chưa kết nối",
     "gate_saved_server": "Máy chủ đã lưu",
     "gate_node_details": "Chi tiết",
@@ -1482,7 +1449,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_favorites_empty": "Chưa có mục yêu thích đã lưu",
     "gate_quality_scope":
         "Lưu lượng được đo tại VPN Gate. RTT, mất gói và chỉ số truyền tải phản ánh kết nối WARP đến Cloudflare.",
-    "gate_subtitle": "Chọn đầu ra cuối cho lưu lượng proxy",
     "gate_scope":
         "Quy tắc kết nối trực tiếp vẫn có hiệu lực. Lưu lượng proxy dừng nếu VPN Gate gặp lỗi.",
     "gate_current": "Máy chủ đang kết nối",
@@ -1524,7 +1490,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_configuring_network": "Đang áp dụng cài đặt mạng",
   },
   "th": {
-    "gate_manage": "จัดการเซิร์ฟเวอร์",
     "gate_enabled_idle": "เปิดใช้งาน · ยังไม่เชื่อมต่อ",
     "gate_saved_server": "เซิร์ฟเวอร์ที่บันทึกไว้",
     "gate_node_details": "รายละเอียด",
@@ -1572,7 +1537,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_favorites_empty": "ยังไม่มีรายการโปรดที่บันทึก",
     "gate_quality_scope":
         "วัดปริมาณการรับส่งข้อมูลที่ VPN Gate ส่วน RTT การสูญเสียแพ็กเก็ต และตัวชี้วัดการรับส่ง แสดงการเชื่อมต่อ WARP กับ Cloudflare",
-    "gate_subtitle": "เลือกทางออกสุดท้ายของทราฟฟิกพร็อกซี",
     "gate_scope":
         "กฎการเชื่อมต่อโดยตรงยังมีผล หาก VPN Gate ขัดข้อง ทราฟฟิกพร็อกซีจะหยุด",
     "gate_current": "เซิร์ฟเวอร์ที่เชื่อมต่อ",
@@ -1612,7 +1576,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_configuring_network": "กำลังใช้การตั้งค่าเครือข่าย",
   },
   "ar": {
-    "gate_manage": "إدارة الخوادم",
     "gate_enabled_idle": "مفعّل · غير متصل",
     "gate_saved_server": "الخادم المحفوظ",
     "gate_node_details": "التفاصيل",
@@ -1659,7 +1622,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_favorites_empty": "لا توجد مفضلة محفوظة بعد",
     "gate_quality_scope":
         "تُقاس حركة البيانات عند VPN Gate. يصف RTT والفقد ومقاييس النقل اتصال WARP بـ Cloudflare.",
-    "gate_subtitle": "اختر المخرج النهائي لحركة الوكيل",
     "gate_scope":
         "تبقى قواعد الاتصال المباشر فعّالة. تتوقف حركة الوكيل إذا تعطل VPN Gate.",
     "gate_current": "الخادم المتصل",
@@ -1701,7 +1663,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_configuring_network": "جارٍ تطبيق إعدادات الشبكة",
   },
   "fa": {
-    "gate_manage": "مدیریت سرورها",
     "gate_enabled_idle": "فعال · متصل نیست",
     "gate_saved_server": "سرور ذخیره‌شده",
     "gate_node_details": "جزئیات",
@@ -1749,7 +1710,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_favorites_empty": "هنوز علاقه‌مندی ذخیره نشده است",
     "gate_quality_scope":
         "ترافیک در VPN Gate اندازه‌گیری می‌شود. RTT، اتلاف بسته و معیارهای انتقال مربوط به اتصال WARP به Cloudflare هستند.",
-    "gate_subtitle": "خروجی نهایی ترافیک پراکسی را انتخاب کنید",
     "gate_scope":
         "قوانین اتصال مستقیم فعال می‌مانند. در صورت خرابی VPN Gate ترافیک پراکسی متوقف می‌شود.",
     "gate_current": "سرور متصل",
@@ -1791,7 +1751,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_configuring_network": "در حال اعمال تنظیمات شبکه",
   },
   "zh_HK": {
-    "gate_manage": "管理伺服器",
     "gate_enabled_idle": "已啟用 · 未連線",
     "gate_saved_server": "已儲存的伺服器",
     "gate_node_details": "詳情",
@@ -1837,7 +1796,6 @@ const kVpnGateCatalogs = <String, Map<String, String>>{
     "gate_favorites_empty": "尚未收藏伺服器",
     "gate_quality_scope":
         "流量統計來自 VPN Gate；RTT、封包遺失及傳輸指標反映 WARP 到 Cloudflare 的連線。",
-    "gate_subtitle": "選擇代理流量的最終出口",
     "gate_scope": "直連規則仍然生效。VPN Gate 故障時，代理流量停止。",
     "gate_current": "目前連線的伺服器",
     "gate_draft": "待套用選擇",

@@ -152,6 +152,8 @@ const Map<String, String> kPlCatalog = <String, String>{
   'cancel': 'Anuluj',
   'active': 'Aktywny',
   'set_active': 'Ustaw aktywny',
+  'switch_account_reconnect_body':
+      'Bieżące połączenie zostanie nawiązane ponownie z tym kontem.',
   'edit': 'Edytuj',
   'delete': 'Usuń',
   'delete_profile': 'Usunąć konto?',
@@ -186,8 +188,6 @@ const Map<String, String> kPlCatalog = <String, String>{
   'dns_leak_warning': 'Lokalny DNS może ujawnić żądane nazwy',
   'dns_leak_warning_body':
       'Lokalny i systemowy DNS mogą ujawniać żądane domeny bieżącej sieci.',
-  'system_proxy': 'Konfiguruj systemowe proxy',
-  'output_disabled_in_profile': 'Wyłączone w Ustawieniach',
   'auto_connect': 'Łącz automatycznie bieżące konto przy uruchomieniu',
   'lan_warning': 'Proxy wystawione na sieć lokalną',
   'lan_warning_body':

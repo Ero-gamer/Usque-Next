@@ -58,7 +58,6 @@ const Map<String, String> kUiWorkflowId = <String, String>{
   'home_traffic_waiting': 'Menunggu data lalu lintas',
   'home_traffic_unavailable': 'Riwayat lalu lintas tidak tersedia',
   'home_traffic_stale': 'Pembaruan lalu lintas tertunda',
-  'home_outputs_next': 'Tersedia setelah terhubung',
   'home_outputs_retry': 'VPN dan proksi untuk koneksi berikutnya',
   'connection_protection_group': 'Koneksi & perlindungan',
   'proxy_routing_group': 'Proksi & perutean',

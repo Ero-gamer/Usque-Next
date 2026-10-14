@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../core/app_strings.dart';
+import '../core/legal_links.dart';
 import '../core/usque_motion.dart';
 import '../core/usque_theme.dart';
 import '../models/app_models.dart';
@@ -867,20 +868,7 @@ class _TermsStep extends StatelessWidget {
           spacing: 8,
           runSpacing: 4,
           children: [
-            for (final link in const [
-              (
-                'onboarding_application_terms',
-                'https://www.cloudflare.com/application/terms/',
-              ),
-              (
-                'onboarding_personal_privacy',
-                'https://www.cloudflare.com/application/privacypolicy/',
-              ),
-              (
-                'onboarding_zero_trust_privacy',
-                'https://www.cloudflare.com/privacypolicy/',
-              ),
-            ])
+            for (final link in kCloudflareLegalLinks)
               TextButton.icon(
                 onPressed: () => openExternalLink(
                   context,

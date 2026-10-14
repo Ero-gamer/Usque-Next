@@ -132,7 +132,8 @@ void main() {
         proxy: const ProxySettings(httpPort: 9090, systemProxy: true),
       );
       final app = await _app(tester, engine, profile: original);
-      expect(tester.getSize(find.byType(ContentList)).height, 346);
+      // Without a ring beside them the rows keep their natural height.
+      expect(tester.getSize(find.byType(ContentList)).height, 333);
       engine.saveBarrier = Completer();
       await tester.tap(_toggle('tun'));
       await tester.pump();
@@ -598,10 +599,10 @@ void main() {
           await tester.pumpAndSettle();
           expect(engine.edits.single.$2, ['frontends.tunnel']);
           await tester.ensureVisible(
-            find.byKey(const ValueKey('home-chain-proxy-heading')),
+            find.byKey(const ValueKey('home-chain-proxy-settings')),
           );
           await tester.tap(
-            find.byKey(const ValueKey('home-chain-proxy-heading')),
+            find.byKey(const ValueKey('home-chain-proxy-settings')),
           );
           await tester.pumpAndSettle();
           expect(opened, 1);

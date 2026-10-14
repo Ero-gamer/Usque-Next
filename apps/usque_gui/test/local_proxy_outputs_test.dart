@@ -40,7 +40,7 @@ void main() {
         );
         final systemProxy = find.widgetWithText(
           SwitchListTile,
-          app.strings.get('system_proxy'),
+          app.strings.get('home_system_proxy'),
         );
         expect(
           systemProxy,
@@ -114,14 +114,17 @@ void main() {
         );
         await tester.pumpAndSettle();
         return tester.widget<SwitchListTile>(
-          find.widgetWithText(SwitchListTile, app.strings.get('system_proxy')),
+          find.widgetWithText(
+            SwitchListTile,
+            app.strings.get('home_system_proxy'),
+          ),
         );
       }
 
       Finder hint(String key) => find.descendant(
         of: find.widgetWithText(
           SwitchListTile,
-          app.strings.get('system_proxy'),
+          app.strings.get('home_system_proxy'),
         ),
         matching: find.text(app.strings.get(key)),
       );

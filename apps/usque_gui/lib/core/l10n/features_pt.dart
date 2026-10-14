@@ -61,7 +61,6 @@ const Map<String, String> kUiWorkflowPt = <String, String>{
   'home_traffic_waiting': 'Aguardando dados de tráfego',
   'home_traffic_unavailable': 'Sem histórico de tráfego',
   'home_traffic_stale': 'Atualização do tráfego atrasada',
-  'home_outputs_next': 'Disponível após conectar',
   'home_outputs_retry': 'VPN e proxies da próxima conexão',
   'connection_protection_group': 'Conexão e proteção',
   'proxy_routing_group': 'Proxy e roteamento',

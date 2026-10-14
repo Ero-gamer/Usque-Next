@@ -55,7 +55,6 @@ const Map<String, String> kUiWorkflowAr = <String, String>{
   'home_traffic_waiting': 'بانتظار بيانات الحركة',
   'home_traffic_unavailable': 'لا يوجد سجل للحركة',
   'home_traffic_stale': 'تحديثات حركة البيانات متأخرة',
-  'home_outputs_next': 'متاح بعد الاتصال',
   'home_outputs_retry': 'VPN والوكلاء المستخدمون في الاتصال التالي',
   'connection_protection_group': 'الاتصال والحماية',
   'proxy_routing_group': 'الوكيل والتوجيه',

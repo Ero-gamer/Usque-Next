@@ -127,7 +127,7 @@ void main() {
   );
 
   testWidgets(
-    'Home keeps exit flags distinct from the mobile chain block and IP-only details',
+    'Home keeps exit flags distinct from the chain summary and IP-only details',
     (tester) async {
       final app = await pumpWorkflow(
         tester,
@@ -189,10 +189,8 @@ void main() {
                   .map((flag) => flag.countryCode)
                   .toList();
               expect(codes, contains(measured ? 'SG' : null));
-              expect(
-                codes.where((code) => code == 'JP').length,
-                gate && platform == TargetPlatform.android ? 1 : 0,
-              );
+              // Both layouts name the VPN Gate node in their chain summary.
+              expect(codes.where((code) => code == 'JP').length, gate ? 1 : 0);
               expect(tester.takeException(), isNull);
             }
           }

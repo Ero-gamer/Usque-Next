@@ -319,7 +319,7 @@ void main() {
     }
   }
 
-  testWidgets('Home keeps the mobile chain block and omits it on desktop', (
+  testWidgets('Home names the chain once beside each layout\'s headline', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -349,9 +349,11 @@ void main() {
         workflowHost(app, home: HomeScreen(controller: app)),
       );
       await tester.pumpAndSettle();
+      // The phone summary leaves the status to the headline below it; the
+      // desktop chain row repeats it beside its switch.
       expect(
         find.text(label),
-        findsNWidgets(copies ?? (mobile ? 2 : 1)),
+        findsNWidgets(copies ?? (mobile ? 1 : 2)),
         reason: '$size $label',
       );
       for (final other in present) {
@@ -427,8 +429,8 @@ void main() {
           vpnGate,
           strings.get('disconnected'),
           copies: 1,
-          present: mobile ? [strings.chain('enabled_idle')] : const [],
-          absent: !mobile ? [strings.chain('enabled_idle')] : const [],
+          present: !mobile ? [strings.chain('enabled_idle')] : const [],
+          absent: mobile ? [strings.chain('enabled_idle')] : const [],
         );
         await expectStatus(
           size,

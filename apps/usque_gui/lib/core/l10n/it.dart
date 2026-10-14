@@ -154,6 +154,8 @@ const Map<String, String> kItCatalog = <String, String>{
   'cancel': 'Annulla',
   'active': 'Attivo',
   'set_active': 'Imposta come attivo',
+  'switch_account_reconnect_body':
+      'La connessione attuale verrà ristabilita con questo account.',
   'edit': 'Modifica',
   'delete': 'Elimina',
   'delete_profile': 'Rimuovere l’account?',
@@ -189,8 +191,6 @@ const Map<String, String> kItCatalog = <String, String>{
   'dns_leak_warning': 'Il DNS locale può rivelare i nomi richiesti',
   'dns_leak_warning_body':
       'Il DNS locale e di sistema può rivelare i domini richiesti alla rete attuale.',
-  'system_proxy': 'Configura il proxy di sistema',
-  'output_disabled_in_profile': 'Disattivato in Impostazioni',
   'auto_connect': 'Connetti automaticamente l’account corrente all’avvio',
   'lan_warning': 'Proxy esposto alla rete locale',
   'lan_warning_body':

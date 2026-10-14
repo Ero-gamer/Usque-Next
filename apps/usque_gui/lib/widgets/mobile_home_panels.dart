@@ -203,7 +203,6 @@ class MobileTrafficPanel extends StatelessWidget {
 }
 
 typedef _OverviewView = ({
-  ConnectionPhase phase,
   bool connected,
   String? transport,
   String? family,
@@ -227,7 +226,6 @@ class MobileConnectionOverview extends StatelessWidget {
     controller: controller,
     active: (app) => app.section == AppSection.home,
     selector: (app) => (
-      phase: app.snapshot.phase,
       connected: app.snapshot.isConnected,
       transport: app.snapshot.transport,
       family: app.snapshot.addressFamily,
@@ -324,12 +322,10 @@ class MobileConnectionOverview extends StatelessWidget {
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      // Idle and failed sessions both list what the next
+                      // connection will enable.
                       Text(
-                        strings.get(
-                          view.phase == ConnectionPhase.error
-                              ? 'home_outputs_retry'
-                              : 'home_outputs_next',
-                        ),
+                        strings.get('home_outputs_retry'),
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
@@ -349,7 +345,7 @@ class MobileConnectionOverview extends StatelessWidget {
                             if (view.outputs.socks5) _output('SOCKS5'),
                             if (view.outputs.http) _output('HTTP'),
                             if (view.systemProxy)
-                              _output(strings.get('system_proxy')),
+                              _output(strings.get('home_system_proxy')),
                           ],
                         ),
                     ],

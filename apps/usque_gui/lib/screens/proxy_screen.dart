@@ -438,17 +438,26 @@ class _ProxyScreenState extends State<ProxyScreen> {
     return ContentSection(
       icon: socks5 ? LucideIcons.network : LucideIcons.globe,
       title: strings.get(socks5 ? 'socks_listener' : 'http_listener'),
+      // The status beside the title already says whether the output is on.
       subtitle: strings.get(
-        enabled
-            ? (socks5 ? 'socks_capabilities' : 'http_capabilities')
-            : 'output_disabled_in_profile',
+        socks5 ? 'socks_capabilities' : 'http_capabilities',
       ),
       trailing: compact ? null : pill,
-      gap: 22,
+      gap: compact ? 10 : 22,
       children: [
         if (compact) ...[
-          Align(alignment: AlignmentDirectional.centerStart, child: pill),
-          const SizedBox(height: 16),
+          // Below the heading the status joins its text column, as in the
+          // chain proxy section above.
+          Padding(
+            padding: const EdgeInsetsDirectional.only(
+              start: ChainProxyEntry.textIndent,
+            ),
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: pill,
+            ),
+          ),
+          const SizedBox(height: 22),
         ],
         if (socks5 ? _customSocks : _customHttp)
           TextFormField(

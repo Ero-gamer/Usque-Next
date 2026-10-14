@@ -8,6 +8,7 @@ import '../core/chain_strings.dart';
 import '../models/app_models.dart';
 import '../models/network_settings.dart';
 import '../state/app_controller.dart';
+import 'chain_exit_summary.dart';
 import 'chain_source_picker.dart';
 import 'common.dart';
 import 'controller_selector.dart';
@@ -21,11 +22,15 @@ class HomeDesktopControls extends StatefulWidget {
   const HomeDesktopControls({
     required this.controller,
     required this.onOpenChainProxy,
+    this.minHeight,
     super.key,
   });
 
   final AppController controller;
   final VoidCallback onOpenChainProxy;
+
+  /// Height the rows share beside the connection ring; null when stacked.
+  final double? minHeight;
 
   @override
   State<HomeDesktopControls> createState() => _HomeDesktopControlsState();
@@ -244,6 +249,13 @@ class _HomeDesktopControlsState extends State<HomeDesktopControls> {
       final strings = widget.controller.strings;
       final enabled = !_saving && !view.locked;
       final failure = view.failure ?? _saveFailure;
+      final windows = defaultTargetPlatform == TargetPlatform.windows;
+      // Beside the ring, the rows share its height so the first and last
+      // rows meet the ring's top and bottom edges.
+      final rows = windows ? 3 : 2;
+      final rowMinHeight = widget.minHeight == null
+          ? 0.0
+          : (widget.minHeight! - (rows - 1)) / rows;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -253,16 +265,17 @@ class _HomeDesktopControlsState extends State<HomeDesktopControls> {
               _OutputControl(
                 title: strings.tunnelOutputLabel(Theme.of(context).platform),
                 icon: LucideIcons.ethernetPort,
-                option: Text(strings.get('home_tun_hint')),
+                details: Text(strings.get('home_tun_hint')),
                 switchKey: const ValueKey('home-tun-switch'),
                 value: view.tunnel,
                 onChanged: enabled ? _tunnel : null,
+                minHeight: rowMinHeight,
               ),
-              if (defaultTargetPlatform == TargetPlatform.windows)
+              if (windows)
                 _OutputControl(
                   title: strings.get('home_system_proxy'),
                   icon: LucideIcons.monitorCog,
-                  option: Text(
+                  details: Text(
                     strings.get(
                       !view.http && !view.systemProxy
                           ? 'home_system_proxy_requires_http'
@@ -274,59 +287,99 @@ class _HomeDesktopControlsState extends State<HomeDesktopControls> {
                   onChanged: enabled && (view.http || view.systemProxy)
                       ? _systemProxy
                       : null,
+                  minHeight: rowMinHeight,
                 ),
               _OutputControl(
                 title: strings.chain('title'),
                 icon: LucideIcons.link,
-                bottomSpacing: 2,
+                openKey: const ValueKey('home-chain-proxy-settings'),
                 onOpen: _saving ? null : widget.onOpenChainProxy,
-                option: TextButton.icon(
-                  key: const ValueKey('home-chain-proxy-settings'),
-                  onPressed: _saving ? null : widget.onOpenChainProxy,
-                  style: TextButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    alignment: AlignmentDirectional.centerStart,
-                  ),
-                  iconAlignment: IconAlignment.end,
-                  icon: const Icon(LucideIcons.chevronRight, size: 16),
-                  label: Text(strings.get('settings')),
-                ),
+                details: _ChainDetails(controller: widget.controller),
                 switchKey: const ValueKey('home-chain-proxy-switch'),
                 value: view.chainEnabled,
                 onChanged: enabled ? _chain : null,
+                minHeight: rowMinHeight,
               ),
             ],
           ),
-          if (failure != null) ...[
-            const SizedBox(height: 12),
+          if (failure != null)
+            Padding(
+              padding: const EdgeInsetsDirectional.only(
+                start: _OutputControl.textIndent,
+                top: 12,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      failure,
+                      key: const ValueKey('home-controls-error'),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                  if (view.unconfirmed)
+                    TextButton(
+                      key: const ValueKey('home-controls-refresh'),
+                      onPressed: _saving ? null : () => unawaited(_refresh()),
+                      style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                      child: Text(strings.get('retry')),
+                    )
+                  else if (view.reconnect)
+                    TextButton(
+                      key: const ValueKey('home-controls-reconnect'),
+                      onPressed: enabled ? widget.controller.retry : null,
+                      style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                      child: Text(strings.get('settings_reconnect')),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      );
+    },
+  );
+}
+
+/// The chain proxy's source and choice under its title, with its status when
+/// a session can report one. A switched-off chain lets the switch speak.
+class _ChainDetails extends StatelessWidget {
+  const _ChainDetails({required this.controller});
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) => ChainExitSummaryBuilder(
+    controller: controller,
+    section: AppSection.home,
+    builder: (context, view) {
+      final strings = controller.strings;
+      final theme = Theme.of(context);
+      if (!view.enabled && !view.live && view.selection == null) {
+        return Text(strings.chain('subtitle'));
+      }
+      final label = view.enabled || view.live
+          ? view.statusLabel(strings)
+          : null;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ChainSelectionText(view, key: const ValueKey('home-chain-selection')),
+          if (label != null) ...[
+            const SizedBox(height: 2),
             Semantics(
               liveRegion: true,
               child: Text(
-                failure,
-                key: const ValueKey('home-controls-error'),
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.error,
+                label,
+                key: const ValueKey('home-chain-status'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: statusToneColor(context, view.tone),
                 ),
               ),
             ),
-            if (view.unconfirmed)
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: TextButton(
-                  key: const ValueKey('home-controls-refresh'),
-                  onPressed: _saving ? null : () => unawaited(_refresh()),
-                  child: Text(strings.get('retry')),
-                ),
-              )
-            else if (view.reconnect)
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: TextButton(
-                  key: const ValueKey('home-controls-reconnect'),
-                  onPressed: enabled ? widget.controller.retry : null,
-                  child: Text(strings.get('settings_reconnect')),
-                ),
-              ),
           ],
         ],
       );
@@ -334,102 +387,112 @@ class _HomeDesktopControlsState extends State<HomeDesktopControls> {
   );
 }
 
+/// One output row: icon, title and a muted line in one text column, with
+/// the switch centred on the whole row, as in the settings list tiles.
 class _OutputControl extends StatelessWidget {
   const _OutputControl({
     required this.title,
     required this.icon,
-    required this.option,
+    required this.details,
     required this.switchKey,
     required this.value,
     required this.onChanged,
     this.onOpen,
-    this.bottomSpacing = 1,
+    this.openKey,
+    this.minHeight = 0,
   });
+
+  /// Icon (24) plus its gap (12): where titles and their details start.
+  static const double textIndent = 36;
 
   final String title;
   final IconData icon;
-  final Widget option;
+  final Widget details;
   final Key switchKey;
   final bool value;
   final ValueChanged<bool>? onChanged;
   final VoidCallback? onOpen;
-  final double bottomSpacing;
+  final Key? openKey;
+  final double minHeight;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final heading = Row(
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final label = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ExcludeSemantics(
-          child: Icon(
-            icon,
-            size: 24,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
+        ExcludeSemantics(child: Icon(icon, size: 24, color: muted)),
         const SizedBox(width: 12),
-        Expanded(child: Text(title, style: theme.textTheme.titleMedium)),
-      ],
-    );
-    final toggle = Semantics(
-      label: title,
-      child: SizedBox(
-        width: 80,
-        height: 60,
-        child: Center(
-          child: Transform.scale(
-            scale: 1.2,
-            child: Switch(
-              key: switchKey,
-              value: value,
-              onChanged: onChanged,
-              materialTapTargetSize: MaterialTapTargetSize.padded,
-            ),
-          ),
-        ),
-      ),
-    );
-    return Padding(
-      padding: EdgeInsets.only(bottom: bottomSpacing),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (onOpen != null)
-            TextButton(
-              key: const ValueKey('home-chain-proxy-heading'),
-              onPressed: onOpen,
-              style: TextButton.styleFrom(
-                padding: EdgeInsets.zero,
-                minimumSize: const Size(0, 48),
-                alignment: AlignmentDirectional.centerStart,
-                foregroundColor: theme.colorScheme.onSurface,
-              ),
-              child: heading,
-            )
-          else
-            ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 48),
-              child: Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: heading,
-              ),
-            ),
-          Row(
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                child: DefaultTextStyle.merge(
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
                   ),
-                  child: option,
-                ),
+                  if (onOpen != null) ...[
+                    const SizedBox(width: 4),
+                    Icon(
+                      LucideIcons.chevronRightDir,
+                      size: 16,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ],
+                ],
               ),
-              const SizedBox(width: 12),
-              toggle,
+              const SizedBox(height: 4),
+              DefaultTextStyle.merge(
+                style: theme.textTheme.bodyMedium?.copyWith(color: muted),
+                child: details,
+              ),
             ],
           ),
-        ],
+        ),
+      ],
+    );
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: minHeight),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: onOpen == null
+                    ? label
+                    : TextButton(
+                        key: openKey,
+                        onPressed: onOpen,
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          alignment: AlignmentDirectional.centerStart,
+                          foregroundColor: theme.colorScheme.onSurface,
+                        ),
+                        child: label,
+                      ),
+              ),
+              const SizedBox(width: 12),
+              Semantics(
+                label: title,
+                child: Switch(
+                  key: switchKey,
+                  value: value,
+                  onChanged: onChanged,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
