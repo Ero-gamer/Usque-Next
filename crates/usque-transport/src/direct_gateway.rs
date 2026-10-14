@@ -488,6 +488,26 @@ impl DirectGatewayRouter {
             return false;
         }
         let split_dns_client = self.split_dns.is_some() && is_split_dns_client_packet(&parsed);
+        let route = self.dns_hints.route_ip(
+            parsed.destination,
+            self.protector.network_generation(),
+            &self.policy,
+        );
+        if !split_dns_client
+            && route == GeoRoute::Direct
+            && !crate::geo_direct::direct_family_available(
+                self.protector.as_ref(),
+                SocketAddr::new(parsed.destination, parsed.destination_port),
+            )
+        {
+            // Consume before allocation or any worker-failure fallback. In
+            // particular, failed UDP setup must not send IPv6 through WARP
+            // when the selected physical network only carries IPv4.
+            if let Some(reply) = self.rejector.reply(packet) {
+                let _ = self.rejection_tx.try_send(reply);
+            }
+            return true;
+        }
         if worker_failed {
             // Never let an Engine-internal DNS query fall through into MASQUE
             // if its local listener or packet pump has failed.
@@ -509,12 +529,7 @@ impl DirectGatewayRouter {
         if !self.protector.tun_direct_available() {
             return false;
         }
-        if self.dns_hints.route_ip(
-            parsed.destination,
-            self.protector.network_generation(),
-            &self.policy,
-        ) != GeoRoute::Direct
-        {
+        if route != GeoRoute::Direct {
             return false;
         }
         let flow = FlowKey {
@@ -1561,6 +1576,54 @@ mod tests {
         assert_eq!(protector.protect_calls.load(Ordering::SeqCst), 0);
         assert!(gateway.flows.lock().unwrap().forward.is_empty());
         assert!(incoming.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn unavailable_direct_family_is_consumed_before_nat_or_tunnel_fallback() {
+        let protector = Arc::new(crate::geo_direct::LanProbeProtector {
+            family_mask: Some(1),
+            ..Default::default()
+        });
+        let policy = Arc::new(crate::geo_direct::routing_test_policy(&[(
+            "2001:db8::7",
+            usque_core::RoutingAction::Direct,
+        )]));
+        let (mut gateway, mut incoming) = DirectGatewayRouter::start(
+            &Profile::default(),
+            policy,
+            protector.clone(),
+            Arc::default(),
+            None,
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        let reply_meta = NatPacket {
+            version: 6,
+            protocol: 17,
+            source: "2001:db8::7".parse().unwrap(),
+            destination: CLIENT_IPV6.into(),
+            source_port: 443,
+            destination_port: 50_000,
+            transport_offset: 40,
+            checksum_offset: 46,
+            checksum_optional: false,
+        };
+        let original = crate::l4::tun_wire::udp_response(&reply_meta, b"direct");
+        let mut packet = BytesMut::from(original.as_ref());
+        assert!(gateway.route_outgoing(&mut packet).await);
+        assert_eq!(packet.as_ref(), original.as_ref());
+        let reply = incoming.try_recv().expect("local IPv6 unreachable reply");
+        assert_eq!(reply[6], 58);
+        assert!(gateway.flows.lock().unwrap().forward.is_empty());
+        assert!(protector.attempts.lock().unwrap().is_empty());
+
+        // The dual-stack tunnel remains usable for an unmatched IPv6 target.
+        let mut proxy_meta = reply_meta;
+        proxy_meta.source = "2001:db8::8".parse().unwrap();
+        let mut packet =
+            BytesMut::from(crate::l4::tun_wire::udp_response(&proxy_meta, b"proxy").as_ref());
+        assert!(!gateway.route_outgoing(&mut packet).await);
     }
 
     #[tokio::test]

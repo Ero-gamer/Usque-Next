@@ -426,7 +426,7 @@ impl SplitDnsResolver {
             Err(_) => (Err("complete DNS query timed out".to_owned()), true),
         };
         match response {
-            Ok(response) => {
+            Ok(mut response) => {
                 if self.protector.network_generation() != network_generation {
                     if route == QueryRoute::Direct {
                         self.quality
@@ -435,15 +435,35 @@ impl SplitDnsResolver {
                     complete_queue_entry(&mut direct_queue_entry);
                     return error_response(query_bytes, RCODE_SERVFAIL);
                 }
-                if let Err(error) = response_hints_filtered(&response, &query, Some(&self.policy)) {
-                    return error_response(
-                        query_bytes,
-                        if error == "routing_rejected" {
-                            RCODE_REFUSED
-                        } else {
-                            RCODE_SERVFAIL
-                        },
-                    );
+                let addresses = match response_hints_filtered(&response, &query, Some(&self.policy))
+                {
+                    Ok(addresses) => addresses,
+                    Err(error) => {
+                        return error_response(
+                            query_bytes,
+                            if error == "routing_rejected" {
+                                RCODE_REFUSED
+                            } else {
+                                RCODE_SERVFAIL
+                            },
+                        );
+                    }
+                };
+                if route == QueryRoute::Direct
+                    && !addresses.is_empty()
+                    && addresses.iter().all(|(ip, _)| {
+                        !crate::geo_direct::direct_family_available(
+                            self.protector.as_ref(),
+                            SocketAddr::new(*ip, 0),
+                        ) && query.questions.iter().all(|question| {
+                            self.policy.resolved_route(&question.name, *ip) == GeoRoute::Direct
+                        })
+                    })
+                {
+                    // NODATA lets applications try their other family. Inspect
+                    // the validated answer first: even without an Internet
+                    // route, a local address or PROXY exception can be usable.
+                    response = error_response(query_bytes, 0);
                 }
                 self.hints.observe_policy(
                     &response,
@@ -1327,7 +1347,12 @@ pub(crate) async fn resolve_direct_routed(
 ) -> Result<Vec<SocketAddr>, String> {
     let encrypted = protector.direct_dns_resolver();
     if encrypted.is_none() && protector.physical_dns_servers().is_empty() {
-        return protector.resolve_direct(host, port).await;
+        return direct_candidates(
+            protector.resolve_direct(host, port).await?,
+            protector,
+            policy,
+            host,
+        );
     }
     let generation = protector.network_generation().unwrap_or_default();
     let context = DirectDnsQueryContext {
@@ -1364,11 +1389,27 @@ pub(crate) async fn resolve_direct_routed(
             Err(_) => {}
         }
     }
+    direct_candidates(addresses, protector, policy, host)
+}
+
+fn direct_candidates(
+    mut addresses: Vec<SocketAddr>,
+    protector: &dyn SocketProtector,
+    policy: &GeoDirectPolicy,
+    host: &str,
+) -> Result<Vec<SocketAddr>, String> {
     addresses.retain(|address| !address.ip().is_unspecified() && !address.ip().is_multicast());
     let had_addresses = !addresses.is_empty();
     addresses.retain(|address| !policy.rejects_ip(address.ip()));
     if had_addresses && addresses.is_empty() {
         return Err("routing_rejected".into());
+    }
+    addresses.retain(|address| {
+        policy.resolved_route(host, address.ip()) != GeoRoute::Direct
+            || crate::geo_direct::direct_family_available(protector, *address)
+    });
+    if had_addresses && addresses.is_empty() {
+        return Err(crate::geo_direct::DIRECT_FAMILY_UNAVAILABLE.into());
     }
     addresses.sort();
     addresses.dedup();
@@ -2221,8 +2262,123 @@ pub(crate) mod tests {
         GeoDirectPolicy::with_classifier(Arc::new(Classifier), [CountryCode::parse("CN").unwrap()])
     }
 
+    #[tokio::test]
+    async fn direct_dns_suppresses_only_known_unavailable_address_families() {
+        fn answer(request: &[u8]) -> Vec<u8> {
+            match parse_query(request).unwrap().questions[0].query_type {
+                1 => a_response(request, 60, [192, 0, 2, 7]),
+                28 => {
+                    let mut response = error_response(request, 0);
+                    response[6..8].copy_from_slice(&1_u16.to_be_bytes());
+                    response.extend([0xc0, 12, 0, 28, 0, 1, 0, 0, 0, 60, 0, 16]);
+                    response.extend("2001:db8::7".parse::<Ipv6Addr>().unwrap().octets());
+                    response
+                }
+                _ => error_response(request, 0),
+            }
+        }
+        let udp = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let udp_addr = udp.local_addr().unwrap();
+        let tcp = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let tcp_addr = tcp.local_addr().unwrap();
+        let _udp_task = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(async move {
+            let mut wire = [0; 512];
+            loop {
+                let (length, peer) = udp.recv_from(&mut wire).await.unwrap();
+                udp.send_to(&answer(&wire[..length]), peer).await.unwrap();
+            }
+        }));
+        let _tcp_task = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = tcp.accept().await.unwrap();
+                let length = stream.read_u16().await.unwrap();
+                let mut request = vec![0; usize::from(length)];
+                stream.read_exact(&mut request).await.unwrap();
+                let response = answer(&request);
+                stream.write_u16(response.len() as u16).await.unwrap();
+                stream.write_all(&response).await.unwrap();
+            }
+        }));
+        for mask in [Some(1), Some(2), Some(3), None] {
+            let mut resolver = SplitDnsResolver {
+                tunnel_channel: None,
+                stream_dns: None,
+                assigned_ipv4: "172.16.0.2".parse().unwrap(),
+                assigned_ipv6: "2001:db8::2".parse().unwrap(),
+                tunnel_servers: Vec::new(),
+                final_exit: false,
+                final_tcp: None,
+                final_doh: None,
+                policy: Arc::new(policy()),
+                protector: Arc::new(LocalDnsProtector {
+                    server: udp_addr,
+                    generation: Arc::new(AtomicU64::new(1)),
+                    family_mask: mask,
+                }),
+                hints: Arc::default(),
+                permits: Arc::new(Semaphore::new(MAX_IN_FLIGHT)),
+                service_tasks: Arc::new(Semaphore::new(MAX_IN_FLIGHT)),
+                quality: Default::default(),
+                direct_queue: None,
+            };
+            for explicit in [false, true] {
+                if explicit {
+                    resolver.policy = Arc::new(crate::geo_direct::routing_test_policy(&[
+                        ("direct.example.cn", usque_core::RoutingAction::Direct),
+                        ("proxy.example.cn", usque_core::RoutingAction::Proxy),
+                    ]));
+                }
+                for host in [
+                    "direct.example.cn",
+                    "proxy.example.cn",
+                    "tunnel.example.com",
+                ] {
+                    for kind in [1_u16, 28, 65] {
+                        let mut request = build_host_query(host, 1, 37).unwrap();
+                        let end = request.len();
+                        request[end - 4..end - 2].copy_from_slice(&kind.to_be_bytes());
+                        let direct = resolver.policy.route_host(host) == GeoRoute::Direct;
+                        let suppressed =
+                            direct && matches!((mask, kind), (Some(1), 28) | (Some(2), 1));
+                        for transport in [QueryTransport::Udp, QueryTransport::Tcp] {
+                            resolver.protector = Arc::new(LocalDnsProtector {
+                                server: if transport == QueryTransport::Udp {
+                                    udp_addr
+                                } else {
+                                    tcp_addr
+                                },
+                                generation: Arc::new(AtomicU64::new(1)),
+                                family_mask: mask,
+                            });
+                            let response = resolver.handle(&request, transport).await;
+                            validate_response_bytes(&request, &response).unwrap();
+                            assert_eq!(
+                                read_u16(&response, 6).unwrap(),
+                                u16::from(direct && !suppressed && kind != 65)
+                            );
+                            assert_eq!(
+                                read_u16(&response, 2).unwrap() & 15,
+                                if direct { 0 } else { RCODE_SERVFAIL },
+                                "mask={mask:?} explicit={explicit} host={host} kind={kind}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub(crate) async fn encrypted_handler_roundtrip(
         protector: Arc<dyn SocketProtector>,
+    ) -> Vec<u8> {
+        encrypted_handler_roundtrip_query(protector, 1).await
+    }
+
+    pub(crate) async fn encrypted_handler_roundtrip_query(
+        protector: Arc<dyn SocketProtector>,
+        kind: u16,
     ) -> Vec<u8> {
         use ts_netstack_smoltcp::HasChannel;
         let (stack, _pipe) =
@@ -2245,8 +2401,54 @@ pub(crate) mod tests {
             direct_queue: None,
         };
         resolver
-            .handle(&query(31, "direct.example.cn"), QueryTransport::Udp)
+            .handle(
+                &build_host_query("direct.example.cn", kind, 31).unwrap(),
+                QueryTransport::Udp,
+            )
             .await
+    }
+
+    #[tokio::test]
+    async fn direct_candidates_filter_families_before_the_limit_and_keep_proxy_exceptions() {
+        let ipv6: IpAddr = "2001:db8::7".parse().unwrap();
+        let mut addresses: Vec<IpAddr> = (1..=16)
+            .map(|n| Ipv4Addr::new(192, 0, 2, n).into())
+            .collect();
+        addresses.push(ipv6);
+        let protector = crate::geo_direct::LanProbeProtector {
+            family_mask: Some(2),
+            resolved: Some(addresses),
+            ..Default::default()
+        };
+        let result = resolve_direct_routed(&protector, "direct.example.cn", 443, &policy())
+            .await
+            .unwrap();
+        assert_eq!(result, [SocketAddr::new(ipv6, 443)]);
+
+        let mut profile = usque_core::Profile {
+            allow_lan: false,
+            ..Default::default()
+        };
+        profile.routing.rules.push(usque_core::RoutingRule {
+            id: uuid::Uuid::new_v4(),
+            kind: usque_core::RoutingMatch::Cidr,
+            target: "2001:db8::7".into(),
+            action: usque_core::RoutingAction::Proxy,
+        });
+        let policy = policy().with_custom_rules(&profile).unwrap();
+        let protector = crate::geo_direct::LanProbeProtector {
+            family_mask: Some(1),
+            resolved: Some(vec![ipv6]),
+            ..Default::default()
+        };
+        assert_eq!(
+            policy.resolved_route("direct.example.cn", ipv6),
+            GeoRoute::Tunnel
+        );
+        let result = resolve_direct_routed(&protector, "direct.example.cn", 443, &policy)
+            .await
+            .unwrap();
+        assert_eq!(result, [SocketAddr::new(ipv6, 443)]);
     }
 
     #[test]
@@ -2716,6 +2918,7 @@ pub(crate) mod tests {
     struct LocalDnsProtector {
         server: SocketAddr,
         generation: Arc<AtomicU64>,
+        family_mask: Option<u8>,
     }
 
     impl SocketProtector for LocalDnsProtector {
@@ -2730,6 +2933,89 @@ pub(crate) mod tests {
         fn network_generation(&self) -> Option<u64> {
             Some(self.generation.load(Ordering::Acquire))
         }
+
+        fn endpoint_family_available(&self, endpoint: SocketAddr) -> Option<bool> {
+            self.family_mask
+                .map(|mask| mask & if endpoint.is_ipv4() { 1 } else { 2 } != 0)
+        }
+    }
+
+    #[tokio::test]
+    async fn direct_dns_filters_unusable_answers_but_preserves_proxy_address_exceptions() {
+        let server = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let protector = Arc::new(LocalDnsProtector {
+            server: server.local_addr().unwrap(),
+            generation: Arc::new(AtomicU64::new(1)),
+            family_mask: Some(1),
+        });
+        let ip: Ipv6Addr = "2001:db8::7".parse().unwrap();
+        let local_ip: Ipv6Addr = "fd00::7".parse().unwrap();
+        let task = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(async move {
+            for answer_ip in [ip, ip, local_ip] {
+                let mut wire = [0; 512];
+                let (length, peer) = server.recv_from(&mut wire).await.unwrap();
+                let mut response = error_response(&wire[..length], 0);
+                response[6..8].copy_from_slice(&1_u16.to_be_bytes());
+                response.extend([0xc0, 12, 0, 28, 0, 1, 0, 0, 0, 60, 0, 16]);
+                response.extend(answer_ip.octets());
+                server.send_to(&response, peer).await.unwrap();
+            }
+        }));
+        let mut profile = usque_core::Profile::default();
+        let mut resolver = SplitDnsResolver {
+            tunnel_channel: None,
+            stream_dns: None,
+            assigned_ipv4: "172.16.0.2".parse().unwrap(),
+            assigned_ipv6: "2001:db8::2".parse().unwrap(),
+            tunnel_servers: Vec::new(),
+            final_exit: false,
+            final_tcp: None,
+            final_doh: None,
+            policy: Arc::new(policy().with_custom_rules(&profile).unwrap()),
+            protector,
+            hints: Arc::default(),
+            permits: Arc::new(Semaphore::new(MAX_IN_FLIGHT)),
+            service_tasks: Arc::new(Semaphore::new(MAX_IN_FLIGHT)),
+            quality: Default::default(),
+            direct_queue: None,
+        };
+        let query = build_host_query("direct.example.cn", 28, 39).unwrap();
+        let response = resolver.handle(&query, QueryTransport::Udp).await;
+        assert_eq!(read_u16(&response, 2).unwrap() & 15, 0);
+        assert_eq!(read_u16(&response, 6).unwrap(), 0);
+        assert!(resolver.hints.inner.lock().unwrap().hints.is_empty());
+
+        profile.routing.rules.push(usque_core::RoutingRule {
+            id: uuid::Uuid::new_v4(),
+            kind: usque_core::RoutingMatch::Cidr,
+            target: ip.to_string(),
+            action: usque_core::RoutingAction::Proxy,
+        });
+        resolver.policy = Arc::new(policy().with_custom_rules(&profile).unwrap());
+        let response = resolver.handle(&query, QueryTransport::Udp).await;
+        assert_eq!(read_u16(&response, 2).unwrap() & 15, 0);
+        assert_eq!(
+            response_hints(&response, &parse_query(&query).unwrap()).unwrap(),
+            [(ip.into(), 60)]
+        );
+        assert_eq!(
+            resolver
+                .hints
+                .route_ip(ip.into(), Some(1), &resolver.policy),
+            GeoRoute::Tunnel
+        );
+        let response = resolver.handle(&query, QueryTransport::Udp).await;
+        assert_eq!(
+            response_hints(&response, &parse_query(&query).unwrap()).unwrap(),
+            [(local_ip.into(), 60)]
+        );
+        assert_eq!(
+            resolver
+                .hints
+                .route_ip(local_ip.into(), Some(1), &resolver.policy),
+            GeoRoute::Direct
+        );
+        task.await.unwrap();
     }
 
     #[tokio::test]
@@ -2740,6 +3026,7 @@ pub(crate) mod tests {
         let protector = LocalDnsProtector {
             server: server.local_addr().unwrap(),
             generation: Arc::new(AtomicU64::new(1)),
+            family_mask: None,
         };
         let task = tokio::spawn(async move {
             for _ in 0..2 {
@@ -2829,6 +3116,7 @@ pub(crate) mod tests {
         let protector = LocalDnsProtector {
             server: SocketAddr::from((Ipv4Addr::LOCALHOST, port)),
             generation: Arc::new(AtomicU64::new(1)),
+            family_mask: None,
         };
         let addresses = resolve_physical_host(&protector, "DIRECT.EXAMPLE.CN.", 443)
             .await
@@ -2856,7 +3144,11 @@ pub(crate) mod tests {
             changed_generation.store(2, Ordering::Release);
             udp.send_to(&response, client).await.unwrap();
         });
-        let protector = LocalDnsProtector { server, generation };
+        let protector = LocalDnsProtector {
+            server,
+            generation,
+            family_mask: None,
+        };
         let error = resolve_physical_host(&protector, "direct.example.cn", 443)
             .await
             .unwrap_err();

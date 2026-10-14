@@ -19,6 +19,19 @@ use crate::socket::{DirectEgressLease, DirectProtocol, SocketProtector, socket_h
 const DIRECT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_DIRECT_ADDRESSES: usize = 16;
 
+pub(crate) const DIRECT_FAMILY_UNAVAILABLE: &str = "direct_address_family_unavailable";
+
+/// Physical-family knowledge constrains DIRECT, never PROXY. Unknown platforms
+/// still attempt the protected socket; IPv4-mapped addresses use IPv4 knowledge.
+pub(crate) fn direct_family_available(protector: &dyn SocketProtector, remote: SocketAddr) -> bool {
+    let ip = remote.ip().to_canonical();
+    // Platform family masks describe default Internet paths. A missing default
+    // route does not rule out loopback or on-link/ULA access on that family.
+    ip.is_loopback()
+        || usque_core::config::is_lan_bypass_address(ip)
+        || protector.endpoint_family_available(SocketAddr::new(ip, remote.port())) != Some(false)
+}
+
 /// The route selected by [`GeoDirectPolicy`] for one proxy destination.
 ///
 /// `Tunnel` is deliberately the default: absent, incomplete, or non-matching
@@ -484,19 +497,21 @@ impl AsyncWrite for RoutedTcpStream {
 enum DirectFallback<T> {
     Direct(TcpStream, DirectEgressLease),
     Fallback(T),
-    EncryptedDnsFailed,
+    Failed(&'static str),
     Rejected,
 }
 
 enum DirectConnectFailure {
     Dns,
     Rejected,
+    Unavailable,
     Connect(Vec<IpAddr>),
 }
 
 /// System-mode failures retain the existing tunnel fallback. Encrypted DNS
-/// failure is terminal; after a successful encrypted answer, a data-path
-/// fallback receives those same IPs and must not resolve the name in plaintext.
+/// failure is terminal. After a successful answer, fallback receives only the
+/// physically usable candidates, so resolving again cannot reintroduce a family
+/// that DIRECT cannot carry. Encrypted answers must never be re-resolved in plaintext.
 async fn connect_with_geo_fallback<T, E, F, Fut>(
     policy: &GeoDirectPolicy,
     protector: &dyn SocketProtector,
@@ -516,13 +531,25 @@ where
         match connect_direct(protector, target, port, policy).await {
             Ok((stream, lease)) => return Ok(DirectFallback::Direct(stream, lease)),
             Err(DirectConnectFailure::Rejected) => return Ok(DirectFallback::Rejected),
+            Err(DirectConnectFailure::Unavailable) => {
+                return Ok(DirectFallback::Failed(DIRECT_FAMILY_UNAVAILABLE));
+            }
             Err(DirectConnectFailure::Dns) if protector.direct_dns_resolver().is_some() => {
-                return Ok(DirectFallback::EncryptedDnsFailed);
+                return Ok(DirectFallback::Failed("encrypted_direct_dns_failed"));
+            }
+            Err(DirectConnectFailure::Dns)
+                if !direct_family_available(protector, (Ipv4Addr::UNSPECIFIED, port).into())
+                    || !direct_family_available(
+                        protector,
+                        (Ipv6Addr::UNSPECIFIED, port).into(),
+                    ) =>
+            {
+                // An unchecked hostname fallback could select the unavailable
+                // family at the exit when physical DNS has failed.
+                return Ok(DirectFallback::Failed("direct_resolution_failed"));
             }
             Err(failure) => {
-                if protector.direct_dns_resolver().is_some()
-                    && let DirectConnectFailure::Connect(addresses) = failure
-                {
+                if let DirectConnectFailure::Connect(addresses) = failure {
                     resolved = Some(addresses);
                 }
                 tracing::debug!(
@@ -554,7 +581,9 @@ pub(crate) async fn resolve_routing_host(
                 ));
             }
             Err(error)
-                if error == "routing_rejected" || protector.direct_dns_resolver().is_some() =>
+                if error == "routing_rejected"
+                    || error == DIRECT_FAMILY_UNAVAILABLE
+                    || protector.direct_dns_resolver().is_some() =>
             {
                 return Err(error);
             }
@@ -573,7 +602,7 @@ pub(crate) async fn connect_routed<E, F, Fut>(
     protector: &dyn SocketProtector,
     counters: Arc<TrafficCounters>,
     destination: (GeoTarget<'_>, u16, Option<&crate::dns::Resolver>),
-    failures: (impl FnOnce() -> E, impl Fn() -> E),
+    failures: (impl FnOnce(&'static str) -> E, impl Fn() -> E),
     tunnel: F,
 ) -> Result<RoutedTcpStream, E>
 where
@@ -581,7 +610,7 @@ where
     Fut: Future<Output = Result<TunnelTcpStream, E>>,
 {
     let (target, port, resolver) = destination;
-    let (encrypted_dns_failure, rejected) = failures;
+    let (direct_failure, rejected) = failures;
     if target.route(policy) == GeoRoute::Reject {
         return Err(rejected());
     }
@@ -595,14 +624,25 @@ where
             match resolve_routing_host(policy, protector, resolver, host, port).await {
                 Ok(result) => result,
                 Err(error) if error.contains("routing_rejected") => return Err(rejected()),
-                Err(_) => return Err(encrypted_dns_failure()),
+                Err(error) if error == DIRECT_FAMILY_UNAVAILABLE => {
+                    return Err(direct_failure(DIRECT_FAMILY_UNAVAILABLE));
+                }
+                Err(_) => return Err(direct_failure("encrypted_direct_dns_failed")),
             };
         let mut allowed = Vec::new();
-        for ip in addresses
+        let mut unavailable = false;
+        let addresses = addresses
             .into_iter()
             .filter(|ip| !policy.rejects_ip(*ip))
+            .filter(|ip| {
+                let usable = policy.resolved_route(host, *ip) != GeoRoute::Direct
+                    || direct_family_available(protector, SocketAddr::new(*ip, port));
+                unavailable |= !usable;
+                usable
+            })
             .take(MAX_DIRECT_ADDRESSES)
-        {
+            .collect::<Vec<_>>();
+        for ip in addresses {
             let route = if tunnel_only {
                 GeoRoute::Tunnel
             } else {
@@ -620,12 +660,19 @@ where
                             _lease: lease,
                         });
                     }
+                    if !direct_family_available(protector, SocketAddr::new(ip, port)) {
+                        unavailable = true;
+                        continue;
+                    }
                 }
                 GeoRoute::Tunnel => {}
             }
             allowed.push(ip);
         }
         if allowed.is_empty() {
+            if unavailable {
+                return Err(direct_failure(DIRECT_FAMILY_UNAVAILABLE));
+            }
             return Err(rejected());
         }
         return tunnel(Some(allowed)).await.map(RoutedTcpStream::Tunnel);
@@ -639,7 +686,7 @@ where
                 _lease: lease,
             }),
             DirectFallback::Fallback(stream) => Ok(RoutedTcpStream::Tunnel(stream)),
-            DirectFallback::EncryptedDnsFailed => Err(encrypted_dns_failure()),
+            DirectFallback::Failed(reason) => Err(direct_failure(reason)),
             DirectFallback::Rejected => Err(rejected()),
         })
 }
@@ -657,6 +704,8 @@ async fn connect_direct(
                 .map_err(|error| {
                     if error == "routing_rejected" {
                         DirectConnectFailure::Rejected
+                    } else if error == DIRECT_FAMILY_UNAVAILABLE {
+                        DirectConnectFailure::Unavailable
                     } else {
                         DirectConnectFailure::Dns
                     }
@@ -664,10 +713,16 @@ async fn connect_direct(
         }
         GeoTarget::Ip(ip) => vec![SocketAddr::new(ip, port)],
     };
+    let mut unavailable = false;
     let addresses = addresses
         .into_iter()
-        .take(MAX_DIRECT_ADDRESSES)
         .filter(|address| !address.ip().is_unspecified() && !address.ip().is_multicast())
+        .filter(|address| {
+            let usable = direct_family_available(protector, *address);
+            unavailable |= !usable;
+            usable
+        })
+        .take(MAX_DIRECT_ADDRESSES)
         .collect::<Vec<_>>();
     for address in &addresses {
         let remote = SocketAddr::new(address.ip(), port);
@@ -675,15 +730,29 @@ async fn connect_direct(
             return Ok(stream);
         }
     }
-    Err(DirectConnectFailure::Connect(
-        addresses.into_iter().map(|address| address.ip()).collect(),
-    ))
+    let addresses = addresses
+        .into_iter()
+        .filter(|address| {
+            let usable = direct_family_available(protector, *address);
+            unavailable |= !usable;
+            usable
+        })
+        .map(|address| address.ip())
+        .collect::<Vec<_>>();
+    if addresses.is_empty() && unavailable {
+        Err(DirectConnectFailure::Unavailable)
+    } else {
+        Err(DirectConnectFailure::Connect(addresses))
+    }
 }
 
 async fn connect_direct_address(
     protector: &dyn SocketProtector,
     remote: SocketAddr,
 ) -> Result<(TcpStream, DirectEgressLease), String> {
+    if !direct_family_available(protector, remote) {
+        return Err(DIRECT_FAMILY_UNAVAILABLE.into());
+    }
     let socket = if remote.is_ipv4() {
         TcpSocket::new_v4()
     } else {
@@ -766,6 +835,9 @@ pub(crate) fn lan_test_policy(allow_lan: bool) -> GeoDirectPolicy {
 #[derive(Default)]
 pub(crate) struct LanProbeProtector {
     pub(crate) attempts: std::sync::Mutex<Vec<(SocketAddr, DirectProtocol)>>,
+    pub(crate) family_mask: Option<u8>,
+    pub(crate) resolved: Option<Vec<IpAddr>>,
+    pub(crate) generation: Option<u64>,
 }
 
 #[cfg(test)]
@@ -775,8 +847,29 @@ impl SocketProtector for LanProbeProtector {
         Ok(())
     }
 
-    fn resolve(&self, _host: &str, _port: u16) -> Result<Vec<SocketAddr>, String> {
-        Err("test forbids physical DNS".into())
+    fn resolve(&self, _host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
+        self.resolved
+            .as_ref()
+            .map(|addresses| {
+                addresses
+                    .iter()
+                    .map(|ip| SocketAddr::new(*ip, port))
+                    .collect()
+            })
+            .ok_or_else(|| "test forbids physical DNS".into())
+    }
+
+    fn endpoint_family_available(&self, endpoint: SocketAddr) -> Option<bool> {
+        self.family_mask
+            .map(|mask| mask & if endpoint.is_ipv4() { 1 } else { 2 } != 0)
+    }
+
+    fn tun_direct_available(&self) -> bool {
+        true
+    }
+
+    fn network_generation(&self) -> Option<u64> {
+        self.generation
     }
 
     async fn protect_for_target(
@@ -879,6 +972,108 @@ mod tests {
             Arc::new(FakeClassifier { host_hit, ip_hit }),
             [CountryCode::parse("CN").unwrap()],
         )
+    }
+
+    #[tokio::test]
+    async fn unavailable_direct_family_never_enters_tcp_tunnel_fallback() {
+        use ts_netstack_smoltcp::netcore::HasChannel;
+        let (stack, _pipe) = crate::netstack::bounded_piped(Default::default());
+        let resolver = crate::dns::Resolver::new(
+            stack.command_channel(),
+            Ipv4Addr::UNSPECIFIED,
+            std::net::Ipv6Addr::UNSPECIFIED,
+            vec![],
+            usque_core::ProxyDnsMode::Remote,
+            Arc::new(crate::socket::NoopSocketProtector),
+        );
+        for (mask, ip) in [(1, "2001:db8::7"), (2, "192.0.2.7")] {
+            let ip: IpAddr = ip.parse().unwrap();
+            let protector = super::LanProbeProtector {
+                family_mask: Some(mask),
+                resolved: Some(vec![ip]),
+                ..Default::default()
+            };
+            for with_ip_rules in [false, true] {
+                let mut entries = vec![("direct.test", usque_core::RoutingAction::Direct)];
+                let ip_text = ip.to_string();
+                if with_ip_rules {
+                    entries.push((&ip_text, usque_core::RoutingAction::Direct));
+                }
+                let policy = super::routing_test_policy(&entries);
+                for target in [GeoTarget::Host("direct.test"), GeoTarget::Ip(ip)] {
+                    if matches!(target, GeoTarget::Ip(_)) && !with_ip_rules {
+                        continue;
+                    }
+                    let result = super::connect_routed(
+                        &policy,
+                        &protector,
+                        Arc::default(),
+                        (target, 443, Some(&resolver)),
+                        (|_| "unavailable", || "rejected"),
+                        |_| async { panic!("unavailable DIRECT family reached the tunnel") },
+                    )
+                    .await;
+                    assert!(result.is_err());
+                }
+            }
+            assert!(protector.attempts.lock().unwrap().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn direct_tcp_fallback_keeps_only_physically_available_candidates() {
+        let ipv4: IpAddr = "192.0.2.7".parse().unwrap();
+        let protector = super::LanProbeProtector {
+            family_mask: Some(1),
+            resolved: Some(vec!["2001:db8::7".parse().unwrap(), ipv4]),
+            ..Default::default()
+        };
+        let result: Result<_, ()> = connect_with_geo_fallback(
+            &policy(true, false),
+            &protector,
+            GeoTarget::Host("direct.test"),
+            443,
+            |addresses| async move {
+                assert_eq!(addresses, Some(vec![ipv4]));
+                Ok(())
+            },
+        )
+        .await;
+        assert!(matches!(result, Ok(DirectFallback::Fallback(()))));
+        assert_eq!(
+            *protector.attempts.lock().unwrap(),
+            [(
+                SocketAddr::new(ipv4, 443),
+                crate::socket::DirectProtocol::Tcp
+            )]
+        );
+    }
+
+    #[test]
+    fn direct_family_knowledge_preserves_unknown_local_and_mapped_addresses() {
+        let protector = super::LanProbeProtector {
+            family_mask: Some(1),
+            ..Default::default()
+        };
+        for address in [
+            "[::1]:443",
+            "[fe80::1]:443",
+            "[fd00::1]:443",
+            "[::ffff:192.0.2.7]:443",
+        ] {
+            assert!(super::direct_family_available(
+                &protector,
+                address.parse().unwrap()
+            ));
+        }
+        assert!(!super::direct_family_available(
+            &protector,
+            "[2001:db8::7]:443".parse().unwrap()
+        ));
+        assert!(super::direct_family_available(
+            &crate::socket::NoopSocketProtector,
+            "[2001:db8::7]:443".parse().unwrap()
+        ));
     }
 
     #[test]
@@ -1052,7 +1247,7 @@ mod tests {
                 protector.as_ref(),
                 Arc::default(),
                 (GeoTarget::Host("nas.example"), 8080, Some(&resolver)),
-                (|| "dns_failed", || "rejected"),
+                (|_| "dns_failed", || "rejected"),
                 |addresses| async move {
                     assert_eq!(addresses, Some(checked));
                     Err("protected_fallback")
@@ -1103,7 +1298,7 @@ mod tests {
                 &protector,
                 Arc::default(),
                 (GeoTarget::Host("direct.test"), 443, Some(&resolver)),
-                (|| "dns_failed", || "rejected"),
+                (|_| "dns_failed", || "rejected"),
                 |_| async {
                     fallback.store(true, Ordering::SeqCst);
                     Err("fallback")

@@ -323,6 +323,22 @@ impl TunBridge {
                     pump_metrics.update(|m| m.unsupported_packets += 1);
                     continue;
                 }
+                if !internal_dns
+                    && resolver.hints().route_ip(
+                        meta.destination,
+                        services.protector.network_generation(),
+                        &services.geo_policy,
+                    ) == GeoRoute::Direct
+                    && !crate::geo_direct::direct_family_available(
+                        services.protector.as_ref(),
+                        SocketAddr::new(meta.destination, meta.destination_port),
+                    )
+                {
+                    if let Some(reply) = routing_rejector.reply(&packet) {
+                        let _ = response_tx.try_send(reply);
+                    }
+                    continue;
+                }
                 if meta.protocol == 17 {
                     let query = &packet[meta.transport_offset + 8..];
                     if meta.destination_port == 53
@@ -710,7 +726,10 @@ async fn connect_target(
     route: GeoRoute,
     services: &ProxyServices,
 ) -> Result<RoutedTcpStream, ()> {
-    if route == GeoRoute::Reject {
+    if route == GeoRoute::Reject
+        || route == GeoRoute::Direct
+            && !crate::geo_direct::direct_family_available(services.protector.as_ref(), remote)
+    {
         return Err(());
     }
     if route == GeoRoute::Direct
@@ -721,6 +740,11 @@ async fn connect_target(
             counters: services.counters.clone(),
             _lease: lease,
         });
+    }
+    if route == GeoRoute::Direct
+        && !crate::geo_direct::direct_family_available(services.protector.as_ref(), remote)
+    {
+        return Err(());
     }
     services
         .dialer

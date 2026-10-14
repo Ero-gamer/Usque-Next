@@ -928,7 +928,7 @@ async fn connect_remote_inner(
         Arc::clone(&context.counters),
         (GeoTarget::from_host(host), port, Some(&context.resolver)),
         (
-            || RemoteConnectError::Failed("encrypted_direct_dns_failed".to_owned()),
+            |reason| RemoteConnectError::Failed(reason.to_owned()),
             || RemoteConnectError::Rejected,
         ),
         |resolved| async {

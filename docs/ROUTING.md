@@ -24,13 +24,14 @@ DNS path; returned private/link-local addresses can go direct, without adding a
 physical DNS query. Older configurations that let the proxy server resolve names
 instead resolve through the current exit DNS while LAN routing is enabled, so
 the returned address can be checked first.
-Direct failures retain the existing tunnel fallback and socket-protection rules.
+Direct failures retain the existing tunnel fallback and socket-protection rules,
+except when the physical network is known to lack the destination address family.
 VPN platform exclusions and Windows' fixed loopback/simple-hostname proxy
 exceptions retain their existing boundaries.
 
 | Action | Application traffic |
 | --- | --- |
-| DIRECT | Uses the existing protected TCP/UDP direct path and its tunnel fallback on connection failure. |
+| DIRECT | Uses protected TCP/UDP direct egress. A known unavailable physical address family fails locally; other connection failures retain the existing tunnel fallback. |
 | REJECT | Refuses the matching target. It never falls back to another route. |
 | PROXY | Uses the current tunnel and selected chain exit, overriding country direct rules. |
 
@@ -41,6 +42,19 @@ therefore override `REJECT 192.0.2.0/24`. List order does not affect matching.
 Case, trailing dots, IDNA and network addresses are normalized by the Engine.
 URLs, paths, ports, wildcards and user-supplied regular expressions are invalid.
 There are at most 256 domain rules and 256 address rules.
+
+When the platform reports an IPv4-only physical network, Split DNS turns a
+DIRECT domain's answer containing only unusable public IPv6 addresses into an
+empty successful AAAA answer, allowing applications to use IPv4. IPv6-only
+physical networks receive the corresponding A answer behavior. Local addresses,
+PROXY address exceptions and upstream DNS errors retain their existing handling.
+This applies to System, DoH and DoT direct DNS. An application
+that still submits an address in a known unavailable DIRECT family receives a
+local failure instead of using WARP; a dual-stack hostname tries its available
+direct candidates. PROXY retains the tunnel's IPv4/IPv6 capabilities. Unknown
+physical-family availability retains the existing protected connection attempts.
+These observations describe Internet paths; loopback and local-network targets
+retain protected direct attempts even without a default route for their family.
 
 Identical targets with different actions prevent saving and identify both rows.
 Parent/child and nested-network exceptions are valid; the editor explains the
@@ -153,8 +167,15 @@ ULA/链路本地网段自动走受保护的直连路径；关闭后取消自动�
 
 进入引擎的流量仍优先遵循自定义域名/IP 规则和 Ads 拒绝。域名沿用当前代理 DNS 设置，
 解析得到的内网地址可直连，不额外查询物理网络 DNS；旧配置若设为由代理服务器解析，开启此选项时
-改为通过当前出口 DNS 获取并检查 IP。直连失败仍按现有规则回退到隧道，系统 VPN 排除规则和 Windows
+改为通过当前出口 DNS 获取并检查 IP。除物理网络已明确不支持目标地址族外，直连失败仍按现有规则回退到隧道。系统 VPN 排除规则和 Windows
 固定的回环地址/简单主机名例外保持原有边界。
+
+本地物理网络仅支持 IPv4 时，若 DIRECT 域名的 AAAA 回答仅含无法直连的公网 IPv6 地址，
+分流 DNS 返回成功但无地址的响应，使应用使用 IPv4；仅支持 IPv6 时对 A 回答作相同处理。
+局域网地址、PROXY 地址例外和上游 DNS 错误沿用现有处理。System、DoH 和 DoT 直连 DNS 均适用。
+若应用仍提交本地已知不支持的 DIRECT 地址族，连接在本地失败，不再转入 WARP；双栈域名会尝试
+可用的直连地址。PROXY 仍可使用隧道提供的 IPv4／IPv6。平台未报告地址族能力时，沿用受保护的连接尝试。
+此处地址族信息描述互联网路径；回环和局域网目标即使缺少该地址族的默认路由，也仍尝试受保护的直连。
 
 域名包含自身及子域名，更具体的域名优先；IP 使用最长前缀匹配。列表顺序不影响结果。
 父子域名和包含网段可作为例外，只显示覆盖提示；同一规范化目标配置不同动作时阻止保存，

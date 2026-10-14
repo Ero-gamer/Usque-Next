@@ -1259,7 +1259,7 @@ async fn proxy_dns_failure_is_terminal_and_data_fallback_reuses_encrypted_answer
                 443,
                 None,
             ),
-            (|| "encrypted_failure", || "routing_rejected"),
+            (|_| "encrypted_failure", || "routing_rejected"),
             |resolved| async {
                 fallback.store(true, Ordering::Release);
                 assert!(resolved.unwrap().contains(&"192.0.2.17".parse().unwrap()));
@@ -1413,6 +1413,27 @@ fn media_type_parser_accepts_only_complete_legal_dns_media_types() {
     assert_eq!(doh.alpn_protocols, [b"h2"]);
     assert!(dot.alpn_protocols.is_empty());
     assert!(!doh.enable_early_data && !dot.enable_early_data);
+}
+
+#[tokio::test]
+async fn split_dns_filters_unavailable_direct_aaaa_from_doh_and_dot() {
+    for mode in [ConfigMode::Doh, ConfigMode::Dot] {
+        let harness = Harness::new(mode, Behavior::Echo).await;
+        let wrapper = Arc::new(ConfiguredDnsProtector {
+            protector: Arc::new(crate::geo_direct::LanProbeProtector {
+                family_mask: Some(1),
+                generation: Some(harness.protector.generation.load(Ordering::Acquire)),
+                ..Default::default()
+            }),
+            resolver: Arc::clone(&harness.resolver),
+        });
+        let response =
+            crate::split_dns::tests::encrypted_handler_roundtrip_query(wrapper, 28).await;
+        assert_eq!(u16::from_be_bytes([response[2], response[3]]) & 15, 0);
+        assert_eq!(u16::from_be_bytes([response[6], response[7]]), 0);
+        assert_eq!(harness.server.counts.queries.load(Ordering::Acquire), 1);
+        harness.stop().await;
+    }
 }
 
 #[tokio::test]

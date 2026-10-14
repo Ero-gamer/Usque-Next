@@ -22,7 +22,8 @@ use usque_core::{OperatingMode, Profile, ProxyAuthCredentials};
 
 use crate::dns::{CandidateResolution, Resolver};
 use crate::geo_direct::{
-    GeoDirectPolicy, GeoRoute, GeoTarget, RoutedTcpStream, bind_protected_udp, connect_routed,
+    DIRECT_FAMILY_UNAVAILABLE, GeoDirectPolicy, GeoRoute, GeoTarget, RoutedTcpStream,
+    bind_protected_udp, connect_routed, direct_family_available,
 };
 use crate::h2::{MasqueTlsIdentity, TransportError};
 use crate::netstack::{
@@ -867,6 +868,9 @@ async fn forward_udp_dns(
         };
         let direct = if route == GeoRoute::Direct {
             let remote = target.socket_address().ok_or(())?;
+            if !direct_family_available(context.protector.as_ref(), remote) {
+                return Err(());
+            }
             crate::split_dns::direct_udp(context.protector.as_ref(), remote, request.payload)
                 .await
                 .ok()
@@ -878,6 +882,13 @@ async fn forward_udp_dns(
             context.counters.record_received(response.len());
             response
         } else {
+            if route == GeoRoute::Direct
+                && target.socket_address().is_some_and(|remote| {
+                    !direct_family_available(context.protector.as_ref(), remote)
+                })
+            {
+                return Err(());
+            }
             dns.query_target(target, request.payload, deadline)
                 .await
                 .map_err(|_| ())?
@@ -1025,6 +1036,13 @@ async fn send_udp_routed(
         for ip in addresses
             .into_iter()
             .filter(|ip| !context.geo_policy.rejects_ip(*ip))
+            .filter(|ip| {
+                context.geo_policy.resolved_route(name, *ip) != GeoRoute::Direct
+                    || direct_family_available(
+                        context.protector.as_ref(),
+                        SocketAddr::new(*ip, port),
+                    )
+            })
             .take(MAX_TARGET_ADDRESSES)
         {
             let route = if tunnel_only {
@@ -1048,6 +1066,11 @@ async fn send_udp_routed(
                 context.counters.record_sent(payload.len());
                 return Ok(());
             }
+            if route == GeoRoute::Direct
+                && !direct_family_available(context.protector.as_ref(), remote)
+            {
+                continue;
+            }
             if context.traffic_policy.blocks_udp(port) {
                 return Ok(());
             }
@@ -1070,14 +1093,17 @@ async fn send_udp_routed(
         };
         match addresses {
             Ok(addresses) => {
-                if context.protector.direct_dns_resolver().is_some() {
-                    resolved_for_tunnel = Some(
-                        addresses
-                            .iter()
-                            .map(|address| address.ip())
-                            .collect::<Vec<_>>(),
-                    );
+                let had_addresses = !addresses.is_empty();
+                let addresses = addresses
+                    .into_iter()
+                    .filter(|address| direct_family_available(context.protector.as_ref(), *address))
+                    .collect::<Vec<_>>();
+                if had_addresses && addresses.is_empty() {
+                    return Err(DIRECT_FAMILY_UNAVAILABLE.into());
                 }
+                // Keep the filtered answer for fallback even with system DNS;
+                // resolving again at the exit could restore unusable IPv6.
+                resolved_for_tunnel = Some(addresses.iter().map(|address| address.ip()).collect());
                 let mut failures = Vec::new();
                 for address in addresses.into_iter().take(MAX_TARGET_ADDRESSES) {
                     let remote = SocketAddr::new(address.ip(), port);
@@ -1122,6 +1148,9 @@ async fn send_udp_routed(
                 if error == "routing_rejected" {
                     return Ok(());
                 }
+                if error == DIRECT_FAMILY_UNAVAILABLE {
+                    return Err(error);
+                }
                 if context.protector.direct_dns_resolver().is_some() {
                     return Err("encrypted_direct_dns_failed".to_owned());
                 }
@@ -1149,6 +1178,7 @@ async fn send_udp_routed(
         }
     }
     if context.edge_resolved
+        && geo_target.route(&context.geo_policy) != GeoRoute::Direct
         && !(port == 53 && context.geo_policy.is_enabled())
         && resolved_for_tunnel.is_none()
         && let Target::Domain(name) = target
@@ -1179,7 +1209,10 @@ async fn send_udp_routed(
     let remote = addresses
         .into_iter()
         .map(|address| SocketAddr::new(address, port))
-        .next()
+        .find(|remote| {
+            geo_target.route(&context.geo_policy) != GeoRoute::Direct
+                || direct_family_available(context.protector.as_ref(), *remote)
+        })
         .ok_or_else(|| "target has no usable address".to_owned())?;
     if context.traffic_policy.blocks_udp(port) {
         return Ok(());
@@ -1602,9 +1635,9 @@ async fn connect_remote_inner(
         Arc::clone(&context.counters),
         (geo_target, port, Some(&context.resolver)),
         (
-            || ConnectFailure {
+            |reason| ConnectFailure {
                 reply: REPLY_HOST_UNREACHABLE,
-                message: "encrypted_direct_dns_failed".to_owned(),
+                message: reason.to_owned(),
             },
             || ConnectFailure {
                 reply: REPLY_CONNECTION_NOT_ALLOWED,
@@ -1917,6 +1950,64 @@ mod tests {
             assert_eq!(*protector.attempts.lock().unwrap(), expected);
             for task in tasks {
                 task.abort();
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn unavailable_direct_family_never_enters_socks_udp_fallback() {
+        struct RecordedUdp(Mutex<Vec<crate::tcp::TcpTarget>>);
+        #[async_trait::async_trait]
+        impl crate::proxy_udp::UdpAssociation for RecordedUdp {
+            async fn send(
+                &self,
+                target: &crate::tcp::TcpTarget,
+                _: &[u8],
+            ) -> Result<(), crate::tcp::DialError> {
+                self.0.lock().await.push(target.clone());
+                Ok(())
+            }
+            async fn recv(
+                &self,
+            ) -> Result<(crate::tcp::TcpTarget, bytes::Bytes), crate::tcp::DialError> {
+                std::future::pending().await
+            }
+        }
+        for with_ip_rules in [false, true] {
+            for mixed in [false, true] {
+                let ipv6: IpAddr = "2001:db8::7".parse().unwrap();
+                let ipv4: IpAddr = "192.0.2.7".parse().unwrap();
+                let protector = Arc::new(crate::geo_direct::LanProbeProtector {
+                    family_mask: Some(1),
+                    resolved: Some(if mixed { vec![ipv6, ipv4] } else { vec![ipv6] }),
+                    ..Default::default()
+                });
+                let (mut context, _, _, tasks) = test_socks_context(protector.clone()).await;
+                let mut entries = vec![("direct.test", usque_core::RoutingAction::Direct)];
+                if with_ip_rules {
+                    entries.push(("2001:db8::7", usque_core::RoutingAction::Direct));
+                }
+                context.geo_policy = Arc::new(crate::geo_direct::routing_test_policy(&entries));
+                context.edge_resolved = true;
+                let association = RecordedUdp(Mutex::new(vec![]));
+                let _ = send_udp_routed(
+                    &context,
+                    &Target::Domain("direct.test".into()),
+                    9000,
+                    b"direct",
+                    &DirectUdpSockets::default(),
+                    TunnelUdpSockets::Association(&association),
+                )
+                .await;
+                let sent = association.0.lock().await;
+                assert_eq!(sent.len(), usize::from(mixed));
+                if mixed {
+                    assert_eq!(sent[0].socket_address(), Some(SocketAddr::new(ipv4, 9000)));
+                }
+                assert!(protector.attempts.lock().unwrap().is_empty());
+                for task in tasks {
+                    task.abort();
+                }
             }
         }
     }

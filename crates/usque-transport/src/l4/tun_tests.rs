@@ -154,6 +154,15 @@ async fn bridge_with_policy(
     enable_udp: bool,
     policy: Arc<crate::geo_direct::GeoDirectPolicy>,
 ) -> (TunBridge, Arc<MemoryDialer>, Arc<L4Metrics>) {
+    bridge_with_protector(mtu, enable_udp, policy, Arc::new(NoopSocketProtector)).await
+}
+
+async fn bridge_with_protector(
+    mtu: u16,
+    enable_udp: bool,
+    policy: Arc<crate::geo_direct::GeoDirectPolicy>,
+    protector: Arc<dyn crate::socket::SocketProtector>,
+) -> (TunBridge, Arc<MemoryDialer>, Arc<L4Metrics>) {
     let profile = super::test_options::TestOptions::TunMtu(mtu).profile(Profile {
         data_plane: if enable_udp {
             DataPlaneMode::ConnectIp
@@ -164,7 +173,6 @@ async fn bridge_with_policy(
     });
     let dialer = Arc::new(MemoryDialer::default());
     let cancellation = CancellationToken::new();
-    let protector = Arc::new(NoopSocketProtector);
     let metrics = Arc::new(L4Metrics::default());
     let budget = Arc::new(BufferBudget::new(
         Limits::platform().buffers,
@@ -247,6 +255,62 @@ impl crate::proxy_udp::UdpAssociation for EchoAssociation {
         self.rx.lock().await.recv().await.ok_or(DialError::Closed)
     }
 }
+#[tokio::test]
+async fn unavailable_direct_ipv6_rejects_tcp_udp_but_preserves_proxy_ipv6() {
+    let policy = Arc::new(crate::geo_direct::routing_test_policy(&[(
+        "2001:db8::7",
+        usque_core::RoutingAction::Direct,
+    )]));
+    let protector = Arc::new(crate::geo_direct::LanProbeProtector {
+        family_mask: Some(1),
+        ..Default::default()
+    });
+    let (mut bridge, dialer, _) =
+        bridge_with_protector(1280, true, policy, protector.clone()).await;
+    let mut io = bridge.attach().unwrap();
+    let source: SocketAddr = "[fd00::2]:40001".parse().unwrap();
+    let target: SocketAddr = "[2001:db8::7]:9000".parse().unwrap();
+    io.send_owned_packet(udp(source, target, b"direct"))
+        .await
+        .unwrap();
+    let reply = timeout(Duration::from_secs(1), io.receive_packet())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(reply[6], 58);
+    let mut tcp = vec![0; 20];
+    tcp[..2].copy_from_slice(&source.port().to_be_bytes());
+    tcp[2..4].copy_from_slice(&target.port().to_be_bytes());
+    tcp[12] = 0x50;
+    tcp[13] = 2;
+    io.send_owned_packet(ip_packet(source.ip(), target.ip(), 6, tcp))
+        .await
+        .unwrap();
+    let reply = timeout(Duration::from_secs(1), io.receive_packet())
+        .await
+        .unwrap()
+        .unwrap();
+    let meta = NatPacket::parse(&reply).unwrap();
+    assert_eq!(meta.protocol, 6);
+    assert_ne!(reply[meta.transport_offset + 13] & 4, 0);
+    assert!(valid_transport(&reply, &meta));
+    assert!(dialer.targets.lock().unwrap().is_empty());
+    assert!(protector.attempts.lock().unwrap().is_empty());
+
+    io.send_owned_packet(udp(source, "[2001:db8::8]:9000".parse().unwrap(), b"proxy"))
+        .await
+        .unwrap();
+    let reply = timeout(Duration::from_secs(1), io.receive_packet())
+        .await
+        .unwrap()
+        .unwrap();
+    let meta = NatPacket::parse(&reply).unwrap();
+    assert_eq!(meta.protocol, 17);
+    assert!(valid_transport(&reply, &meta));
+    assert_eq!(&reply[meta.transport_offset + 8..], b"proxy");
+    bridge.shutdown().await;
+}
+
 #[tokio::test]
 async fn reject_policy_refuses_tcp_udp_and_dns_without_opening_a_flow() {
     let policy = Arc::new(crate::geo_direct::routing_test_policy(&[

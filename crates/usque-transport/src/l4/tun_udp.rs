@@ -132,6 +132,9 @@ async fn worker(
                 let remote = SocketAddr::new(meta.destination, meta.destination_port);
                 let route = hints.route_ip(remote.ip(), generation, &services.geo_policy);
                 if route == GeoRoute::Reject { rejector.reject(&packet, &meta); continue; }
+                if route == GeoRoute::Direct && !crate::geo_direct::direct_family_available(services.protector.as_ref(), remote) {
+                    rejector.reject(&packet, &meta); continue;
+                }
                 if route != GeoRoute::Direct && services.traffic_policy.blocks_udp(remote.port()) {
                     rejector.reject(&packet, &meta); continue;
                 }
@@ -167,6 +170,9 @@ async fn worker(
                     }
                     if !targets.contains_key(&remote) {
                         direct.remove(&remote);
+                    }
+                    if !crate::geo_direct::direct_family_available(services.protector.as_ref(), remote) {
+                        rejector.reject(&packet, &meta); continue;
                     }
                 }
                 if services.traffic_policy.blocks_udp(remote.port()) {
