@@ -137,39 +137,54 @@ void main() {
     },
   );
 
-  testWidgets(
-    'advanced defaults stay in the draft until applied and successful save clears guard',
-    (tester) async {
-      final engine = WorkflowEngine();
-      final app = await pumpWorkflow(
-        tester,
-        engine,
-        section: AppSection.settings,
-      );
-      app.sharedNetwork = app.activeProfile.copyWith(sni: 'custom.example');
-      await tester.pumpWidget(
-        workflowHost(app, home: AdvancedSettingsScreen(controller: app)),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(app.strings.get('reset_defaults')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(app.strings.get('reset')));
-      await tester.pumpAndSettle();
-      expect(engine.writes, 0);
-      expect(app.activeProfile.sni, 'custom.example');
-      expect(find.text('Unapplied changes'), findsOneWidget);
-      await tester.tap(find.widgetWithText(FilledButton, 'Apply changes'));
-      await tester.pumpAndSettle();
-      expect(engine.writes, 1);
-      expect(app.activeProfile.sni, UsqueProfile.defaultProfile().sni);
-      expect(find.text('Unapplied changes'), findsNothing);
-      final guard = tester.widget<PopScope<Object?>>(
-        find.byType(PopScope<Object?>),
-      );
-      expect(guard.canPop, isTrue);
-      expect(tester.takeException(), isNull);
-    },
-  );
+  for (final allowLan in [true, false]) {
+    testWidgets(
+      'advanced defaults enable LAN in the draft and only save on apply '
+      '(allowLan: $allowLan)',
+      (tester) async {
+        final engine = WorkflowEngine();
+        final app = await pumpWorkflow(
+          tester,
+          engine,
+          section: AppSection.settings,
+        );
+        app.sharedNetwork = app.activeProfile.copyWith(
+          sni: 'custom.example',
+          allowLan: allowLan,
+        );
+        await tester.pumpWidget(
+          workflowHost(app, home: AdvancedSettingsScreen(controller: app)),
+        );
+        await tester.pumpAndSettle();
+        final lanSwitch = find.widgetWithText(
+          SwitchListTile,
+          app.strings.get('allow_lan'),
+        );
+        expect(tester.widget<SwitchListTile>(lanSwitch).value, allowLan);
+        await tester.tap(find.text(app.strings.get('reset_defaults')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(app.strings.get('reset')));
+        await tester.pumpAndSettle();
+        expect(tester.widget<SwitchListTile>(lanSwitch).value, isTrue);
+        expect(engine.writes, 0);
+        expect(app.activeProfile.sni, 'custom.example');
+        expect(app.activeProfile.allowLan, allowLan);
+        expect(find.text('Unapplied changes'), findsOneWidget);
+        await tester.tap(find.widgetWithText(FilledButton, 'Apply changes'));
+        await tester.pumpAndSettle();
+        expect(engine.writes, 1);
+        expect(app.activeProfile.sni, UsqueProfile.defaultProfile().sni);
+        expect(app.activeProfile.allowLan, isTrue);
+        expect(engine.storedProfiles.single.allowLan, isTrue);
+        expect(find.text('Unapplied changes'), findsNothing);
+        final guard = tester.widget<PopScope<Object?>>(
+          find.byType(PopScope<Object?>),
+        );
+        expect(guard.canPop, isTrue);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets(
     'proxy draft survives section changes without applying or changing runtime',

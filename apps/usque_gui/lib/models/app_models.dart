@@ -953,7 +953,7 @@ class UsqueProfile {
       dnsIpv4: defaultDnsIpv4,
       dnsIpv6: defaultDnsIpv6,
       dnsMode: DnsMode.tunnel,
-      allowLan: false,
+      allowLan: true,
       disableQuic: false,
       proxy: const ProxySettings(),
       directDns: const DirectDnsSettings(),

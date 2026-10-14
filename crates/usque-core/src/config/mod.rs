@@ -702,7 +702,7 @@ impl Profile {
         self.dns_mode = DnsMode::Tunnel;
         self.dns_servers = default_dns_servers();
         self.warp_dns = WarpDnsSettings::default();
-        self.allow_lan = false;
+        self.allow_lan = true;
         self.disable_quic = false;
         self.split_exclusions.clear();
         self.proxy = ProxySettings::default();
@@ -1689,6 +1689,18 @@ mod tests {
         let restored: SharedNetworkSettings =
             serde_json::from_str(&saved).expect("deserialize settings");
         assert!(!restored.allow_lan);
+    }
+
+    #[test]
+    fn reset_network_defaults_restores_lan_access() {
+        for allow_lan in [true, false] {
+            let mut profile = Profile {
+                allow_lan,
+                ..Profile::default()
+            };
+            profile.reset_network_defaults();
+            assert!(profile.allow_lan);
+        }
     }
 
     #[test]

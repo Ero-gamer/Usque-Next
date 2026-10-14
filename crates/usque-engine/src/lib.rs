@@ -7061,6 +7061,7 @@ mod tests {
         profile.name = "Keep this name".to_owned();
         profile.endpoint.sni = "example.com".to_owned();
         profile.mtu = 1400;
+        profile.allow_lan = false;
         service.upsert_profile(profile).await.expect("upsert");
 
         let response = service
@@ -7078,7 +7079,9 @@ mod tests {
         assert_eq!(reset.name, "Keep this name");
         assert_eq!(reset.endpoint, EndpointSettings::default());
         assert_eq!(reset.mtu, 1280);
+        assert!(reset.allow_lan);
         assert_eq!(service.config_snapshot().await.network.mtu, 1280);
+        assert!(service.config_snapshot().await.network.allow_lan);
     }
 
     #[tokio::test]
