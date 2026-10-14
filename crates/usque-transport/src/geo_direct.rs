@@ -11,7 +11,7 @@ use crate::tcp::TcpStream as TunnelTcpStream;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpSocket, TcpStream, UdpSocket};
 use tokio::time::timeout;
-use usque_geo::{ArtifactKind, CountryCode, GeoClassifier, GeoError};
+use usque_geo::{CountryCode, GeoClassifier, GeoError};
 
 use crate::netstack::TrafficCounters;
 use crate::socket::{DirectEgressLease, DirectProtocol, SocketProtector, socket_handle};
@@ -133,15 +133,6 @@ impl GeoDirectPolicy {
             return Ok(Self::disabled());
         }
         let classifier = GeoClassifier::load(cache_dir, &countries)?;
-        if let Some(country) = countries
-            .iter()
-            .find(|country| !classifier.has_geosite(country))
-        {
-            return Err(GeoError::MissingArtifact {
-                country: country.clone(),
-                kind: ArtifactKind::GeoSite,
-            });
-        }
         Ok(Self::new(Arc::new(classifier), countries))
     }
 
@@ -972,6 +963,37 @@ mod tests {
             Arc::new(FakeClassifier { host_hit, ip_hit }),
             [CountryCode::parse("CN").unwrap()],
         )
+    }
+
+    #[test]
+    fn geoip_only_cache_loads_and_unknown_targets_stay_in_the_tunnel() {
+        let directory = tempfile::tempdir().unwrap();
+        let country = CountryCode::parse("CN").unwrap();
+        let path = usque_geo::geoip_cache_path(directory.path(), &country);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            include_bytes!("../../usque-geo/tests/fixtures/geoip-cn.dat"),
+        )
+        .unwrap();
+        let policy = GeoDirectPolicy::load(directory.path(), [country.clone()]).unwrap();
+        assert_eq!(
+            policy.route_ip("1.2.3.4".parse().unwrap()),
+            GeoRoute::Direct
+        );
+        assert_eq!(
+            policy.route_ip("192.0.2.1".parse().unwrap()),
+            GeoRoute::Tunnel
+        );
+        assert_eq!(policy.route_host("example.cn"), GeoRoute::Tunnel);
+        assert_eq!(
+            policy.resolved_route("example.cn", "1.2.3.4".parse().unwrap()),
+            GeoRoute::Tunnel
+        );
+        std::fs::write(&path, b"invalid").unwrap();
+        assert!(GeoDirectPolicy::load(directory.path(), [country.clone()]).is_err());
+        std::fs::remove_file(path).unwrap();
+        assert!(GeoDirectPolicy::load(directory.path(), [country]).is_err());
     }
 
     #[tokio::test]

@@ -18,7 +18,8 @@ pub const ALLOWED_HOSTS: [&str; 3] = [
 const GEOIP_PATH_PREFIX: &str = "/gh/v2fly/geoip@";
 const GEOSITE_PATH_PREFIX: &str = "/gh/v2fly/domain-list-community@";
 
-pub const MAX_GEOIP_BYTES: usize = 2 * 1024 * 1024;
+pub const MAX_GEOIP_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_GLOBAL_GEOIP_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_GEOSITE_BYTES: usize = 16 * 1024 * 1024;
 pub(crate) const MAX_CHECKSUM_BYTES: usize = 8 * 1024;
 
@@ -129,11 +130,11 @@ fn jsdelivr_path_allowed(path: &str) -> bool {
 }
 
 pub(crate) fn geoip_release_object(country: &CountryCode) -> String {
-    let cc = country.as_lower();
-    if cc == "cn" {
-        format!("{cc}.dat")
+    if country.as_str() == "CN" {
+        "cn.dat".to_owned()
     } else {
-        format!("dat/{cc}.dat")
+        // Upstream only publishes checksums for its root release artifacts.
+        "geoip.dat".to_owned()
     }
 }
 
@@ -222,7 +223,7 @@ mod tests {
 
     use super::{
         ALLOWED_HOSTS, FetchedBody, HttpFetch, MAX_GEOIP_BYTES, extend_capped, fetch_first_ok,
-        geoip_dat_url, parse_allowed_url,
+        geoip_dat_url, geoip_sha256_url, parse_allowed_url,
     };
     use crate::country::CountryCode;
     use crate::error::GeoError;
@@ -266,7 +267,15 @@ mod tests {
         );
         assert_eq!(
             geoip_dat_url(ALLOWED_HOSTS[0], &us).unwrap(),
-            "https://cdn.jsdelivr.net/gh/v2fly/geoip@release/dat/us.dat"
+            "https://cdn.jsdelivr.net/gh/v2fly/geoip@release/geoip.dat"
+        );
+        assert_eq!(
+            geoip_sha256_url(ALLOWED_HOSTS[0], &us).unwrap(),
+            "https://cdn.jsdelivr.net/gh/v2fly/geoip@release/geoip.dat.sha256sum"
+        );
+        assert_eq!(
+            geoip_sha256_url(ALLOWED_HOSTS[0], &cn).unwrap(),
+            "https://cdn.jsdelivr.net/gh/v2fly/geoip@release/cn.dat.sha256sum"
         );
         assert!(geoip_dat_url("evil.example", &cn).is_err());
     }

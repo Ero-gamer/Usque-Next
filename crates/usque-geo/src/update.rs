@@ -1,15 +1,18 @@
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
 use crate::cache::{
-    atomic_write, cached_geoip_countries, geoip_cache_path, global_geosite_cache_path,
+    atomic_write, cached_geoip_countries, geoip_cache_path, global_geoip_cache_path,
+    global_geosite_cache_path,
 };
 use crate::country::CountryCode;
 use crate::error::{ArtifactKind, GeoError};
 use crate::fetch::{
     ALLOWED_HOSTS, HttpFetch, MAX_CHECKSUM_BYTES, MAX_GEOIP_BYTES, MAX_GEOSITE_BYTES,
-    fetch_first_ok, geoip_dat_url, geoip_sha256_url, geosite_dat_url, geosite_sha256_url,
+    MAX_GLOBAL_GEOIP_BYTES, fetch_first_ok, geoip_dat_url, geoip_sha256_url, geosite_dat_url,
+    geosite_sha256_url,
 };
 use crate::geoip::GeoIpSet;
 use crate::geosite::GeoSiteSet;
@@ -37,6 +40,7 @@ pub struct ArtifactResult {
 pub struct GeoDownloader<F> {
     fetch: F,
     cache_dir: PathBuf,
+    aggregate_update: tokio::sync::Mutex<()>,
 }
 
 impl<F: HttpFetch> GeoDownloader<F> {
@@ -44,6 +48,7 @@ impl<F: HttpFetch> GeoDownloader<F> {
         Self {
             fetch,
             cache_dir: cache_dir.into(),
+            aggregate_update: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -140,6 +145,15 @@ impl<F: HttpFetch> GeoDownloader<F> {
     }
 
     async fn update_geoip_inner(&self, country: &CountryCode) -> Result<UpdateStatus, GeoError> {
+        if country.as_str() != "CN" {
+            let bytes = self.fetch_verified_geoip(country).await?;
+            let path = geoip_cache_path(&self.cache_dir, country);
+            if std::fs::read(&path).is_ok_and(|existing| existing == bytes) {
+                return Ok(UpdateStatus::UpToDate);
+            }
+            atomic_write(&path, &bytes)?;
+            return Ok(UpdateStatus::Updated);
+        }
         let expected = self.fetch_geoip_digest(country).await?;
         let path = geoip_cache_path(&self.cache_dir, country);
         if let Ok(existing) = std::fs::read(&path)
@@ -189,6 +203,24 @@ impl<F: HttpFetch> GeoDownloader<F> {
     }
 
     async fn fetch_verified_geoip(&self, country: &CountryCode) -> Result<Vec<u8>, GeoError> {
+        if country.as_str() != "CN" {
+            // Serialize shared-catalog checks and extraction within a downloader.
+            let _guard = self.aggregate_update.lock().await;
+            let expected = self.fetch_geoip_digest(country).await?;
+            let path = global_geoip_cache_path(&self.cache_dir);
+            if let Ok(existing) = read_aggregate(&path)
+                && sha256_digest(&existing) == expected
+            {
+                return crate::geoip::extract_country(&existing, country);
+            }
+            let bytes = self.fetch_geoip_dat(country).await?;
+            if sha256_digest(&bytes) != expected {
+                return Err(GeoError::ChecksumMismatch);
+            }
+            let selected = crate::geoip::extract_country(&bytes, country)?;
+            atomic_write(&path, &bytes)?;
+            return Ok(selected);
+        }
         let expected = self.fetch_geoip_digest(country).await?;
         let bytes = self.fetch_geoip_dat(country).await?;
         if sha256_digest(&bytes) != expected {
@@ -209,7 +241,12 @@ impl<F: HttpFetch> GeoDownloader<F> {
 
     async fn fetch_geoip_dat(&self, country: &CountryCode) -> Result<Vec<u8>, GeoError> {
         let urls = url_fallbacks(|host| geoip_dat_url(host, country))?;
-        let body = fetch_first_ok(&self.fetch, urls, MAX_GEOIP_BYTES)
+        let max_bytes = if country.as_str() == "CN" {
+            MAX_GEOIP_BYTES
+        } else {
+            MAX_GLOBAL_GEOIP_BYTES
+        };
+        let body = fetch_first_ok(&self.fetch, urls, max_bytes)
             .await
             .map_err(|error| map_geoip_404(country, error))?;
         Ok(body.to_vec())
@@ -262,6 +299,17 @@ fn map_geoip_404(country: &CountryCode, error: GeoError) -> GeoError {
 
 fn sha256_digest(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(bytes).into()
+}
+
+fn read_aggregate(path: &Path) -> Result<Vec<u8>, GeoError> {
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?
+        .take((MAX_GLOBAL_GEOIP_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > MAX_GLOBAL_GEOIP_BYTES {
+        return Err(GeoError::PayloadTooLarge(MAX_GLOBAL_GEOIP_BYTES));
+    }
+    Ok(bytes)
 }
 
 pub(crate) fn parse_sha256sum(text: &str) -> Result<[u8; 32], GeoError> {

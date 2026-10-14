@@ -7,6 +7,19 @@ use crate::country::CountryCode;
 use crate::error::GeoError;
 use crate::proto::GeoIpList;
 
+/// Retain only the requested country's entries from a verified aggregate.
+pub(crate) fn extract_country(bytes: &[u8], country: &CountryCode) -> Result<Vec<u8>, GeoError> {
+    let mut list = GeoIpList::decode(bytes).map_err(|_| GeoError::InvalidGeoIp)?;
+    list.entry
+        .retain(|entry| CountryCode::parse(&entry.country_code).is_ok_and(|code| code == *country));
+    let bytes = list.encode_to_vec();
+    if bytes.len() > crate::fetch::MAX_GEOIP_BYTES {
+        return Err(GeoError::PayloadTooLarge(crate::fetch::MAX_GEOIP_BYTES));
+    }
+    GeoIpSet::from_v2ray_dat(&bytes, country)?;
+    Ok(bytes)
+}
+
 #[derive(Clone, Debug, Default)]
 struct BitTrie {
     nodes: Vec<TrieNode>,

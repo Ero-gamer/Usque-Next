@@ -140,6 +140,54 @@ void main() {
   });
 
   testWidgets(
+    'GeoIP-only countries can enable and save, missing GeoIP cannot',
+    (tester) async {
+      final engine = FormEngine()
+        ..storedGeoRules = const GeoRulesList(
+          entries: [
+            GeoRulesEntry(countryCode: 'US', hasGeoip: true),
+            GeoRulesEntry(countryCode: 'JP', hasGeosite: true),
+          ],
+        );
+      final app = appFor(engine);
+      await app.initialize();
+      await tester.pumpWidget(
+        workflowHost(app, home: GeoDirectSettingsScreen(controller: app)),
+      );
+      await tester.pumpAndSettle();
+      final search = find.byKey(const ValueKey('bypass-country-search'));
+      await tester.enterText(search, 'US');
+      await tester.pumpAndSettle();
+      final us = find.byKey(const ValueKey('routing-country-US'));
+      expect(tester.widget<Switch>(us).onChanged, isNotNull);
+      final tile = find.ancestor(of: us, matching: find.byType(ListTile)).first;
+      expect(
+        find.descendant(
+          of: tile,
+          matching: find.text(app.strings.get('geo_not_downloaded')),
+        ),
+        findsNothing,
+      );
+      await Scrollable.ensureVisible(tester.element(us));
+      await tester.pumpAndSettle();
+      await tester.tap(us);
+      await tester.pumpAndSettle();
+      tester.widget<SaveChangesBar>(find.byType(SaveChangesBar)).onSave!();
+      await tester.pumpAndSettle();
+      expect(engine.savedValues!.geoDirectCountries, ['US']);
+      await tester.enterText(search, 'JP');
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<Switch>(find.byKey(const ValueKey('routing-country-JP')))
+            .onChanged,
+        isNull,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'authoritative IDNA conflict is visible and retains both draft rows',
     (tester) async {
       final app = appFor(ConflictRuleEngine());

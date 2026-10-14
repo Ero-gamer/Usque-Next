@@ -132,7 +132,7 @@ Desktop UI and engine remain unprivileged. The desktop agent accepts only versio
 - [x] Interoperate SOCKS5 TCP and UDP over forced H3 and forced H2 live paths without TUN.
 - [x] Implement HTTP CONNECT and ordinary Forward with bounded parsing and strict body framing.
 - [x] Interoperate HTTP CONNECT and Forward over forced H3 and forced H2 live paths without TUN.
-- [x] Download bounded GEO rule data from allowlisted jsDelivr paths, verify per-country GeoIP and the global V2Fly `dlc.dat` checksum/content, atomically retain the last valid cache, and load immutable fail-closed classifiers.
+- [x] Download bounded GEO rule data from allowlisted jsDelivr paths, verify CN GeoIP or the shared `geoip.dat` before country extraction and the global V2Fly `dlc.dat` checksum/content, atomically retain the last valid cache, and load immutable fail-closed classifiers. Valid GeoIP enables country presets; GeoSite country domains are optional.
 - [x] Route selected SOCKS5 TCP/UDP and HTTP destinations over protected direct sockets, using GeoSite for hostnames and GeoIP for literals, with MASQUE fallback on direct setup failure.
 - [x] Replace fixed 64 KiB proxy TCP windows with bounded preferred/fallback tiers,
   CUBIC, disabled Nagle, 128 KiB bidirectional relays, and a 1024-packet pipe.

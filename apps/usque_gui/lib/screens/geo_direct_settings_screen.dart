@@ -329,7 +329,6 @@ class _GeoDirectSettingsScreenState extends State<GeoDirectSettingsScreen> {
               final country = countries[index];
               final entry = byCode[country.code];
               final hasGeoip = entry?.hasGeoip ?? false;
-              final ready = hasGeoip && (entry?.hasGeosite ?? false);
               final enabled = _enabled.contains(country.code);
               final date = _entryDate(entry);
               return ListTile(
@@ -341,7 +340,7 @@ class _GeoDirectSettingsScreenState extends State<GeoDirectSettingsScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 subtitle: Text(
-                  ready
+                  hasGeoip
                       ? (date ?? strings.get('geo_downloaded'))
                       : strings.get('geo_not_downloaded'),
                 ),
@@ -365,7 +364,7 @@ class _GeoDirectSettingsScreenState extends State<GeoDirectSettingsScreen> {
                       child: Switch(
                         key: ValueKey('routing-country-${country.code}'),
                         value: enabled,
-                        onChanged: !_saving && (ready || enabled)
+                        onChanged: !_saving && (hasGeoip || enabled)
                             ? (value) {
                                 setState(() {
                                   _saved = false;

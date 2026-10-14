@@ -70,6 +70,22 @@ otherwise retain priority; explicit address rules can override preset/default
 routing when there is no explicit domain match. To exempt a name from Ads, add
 a domain DIRECT or PROXY rule.
 
+## Country presets
+
+In **Bypass settings → Countries**, download a country's data, enable its
+switch, then **Apply changes**. A valid GeoIP cache is required; country GeoSite
+categories are optional. Without a country domain category, hostname targets
+have no GeoSite DIRECT match; IP-address targets still match GeoIP. Unknown
+names and addresses keep the existing tunnel route. Missing or corrupt GeoIP,
+and corrupt GeoSite when present, prevent applying or starting the configuration.
+
+CN uses the upstream checksummed `cn.dat`. Other countries are extracted from
+the checksummed `geoip.dat` aggregate, cached once and rechecked against its
+upstream SHA-256 before reuse. Only the requested country is written into its
+country cache. Downloads retain the HTTPS/source allowlist, atomic replacement
+and last-good-cache behavior, with an 8 MiB country limit and a 32 MiB aggregate
+limit. A failed download leaves existing country data intact.
+
 ## Ads
 
 **Ad and tracker blocking** is off by default. It uses
@@ -92,7 +108,8 @@ Custom domains override Ads, which takes priority over country direct presets.
 Failed updates retain the last complete Ads catalog. If no valid catalog exists,
 connections are still allowed: the page reports Ads unavailable, while custom
 rules continue to apply. Invalid custom rules prevent applying/starting the
-configuration. Country data keeps its existing validation requirements.
+configuration. Country data requires valid GeoIP; GeoSite adds domain matching
+when available.
 
 Ads switches and verified catalog replacements apply to new requests in the
 current session without reconnecting. A session-owned shared matcher swaps only
@@ -158,6 +175,13 @@ validation; unavailable isolated checks are `not_run`.
 打开 **设置 → 分流设置 → 自定义分流规则**，添加单条规则，或按指定动作批量粘贴。
 每行填写域名、IP 或 CIDR，然后点击 **应用修改**。DIRECT 为直连，REJECT 为拒绝，
 PROXY 使用当前隧道及链式出口。设置跨账号共享；查看应用结果，必要时重新连接。
+
+在 **分流设置 → 国家/地区** 下载国家数据，打开直连开关并点击 **应用修改**。
+启用需要有效 GeoIP，GeoSite 国家域名分类为可选；没有域名分类时，仍可按 IP 目标
+匹配国家，域名目标及未匹配的地址沿用隧道路由。缺少或损坏的 GeoIP，以及已存在但损坏的 GeoSite
+会阻止应用设置或连接。CN 使用带校验的 `cn.dat`，其他国家从带 SHA-256 校验的 `geoip.dat`
+总库提取；总库共用缓存，每次复用前重新对照上游校验值。单国上限 8 MiB，总库上限 32 MiB，
+保留 HTTPS、来源白名单、原子替换和下载失败保留旧数据的保护。
 
 **高级网络设置 → 路由与保护 → 允许访问局域网** 对所有输出生效：VPN/TUN、HTTP 转发及 CONNECT
 （包括 Windows 系统代理）、SOCKS5 TCP/UDP；UDP 仍受所选数据平面能力限制。

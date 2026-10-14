@@ -100,6 +100,8 @@ Linux/WSL 可运行上述命令预览界面并热重载，切换模拟连接状�
 - Windows 托盘图标带状态圆点，托盘菜单可直接切换虚拟网卡和系统代理；窗口在后台时，持续 5 秒以上的重连、连接错误以及之后的恢复会弹出系统通知。窗口首次居中打开，之后恢复上次的位置、大小与最大化状态。快捷键：Ctrl+1～4 切换页面，Esc／Alt+←／鼠标后退键返回，Ctrl+S 应用修改，F5 刷新。
 
 - **Bypass settings** combines a custom DIRECT/REJECT/PROXY rule list, an independent Ads switch, and country direct presets. The editor supports individual edits and action-scoped bulk paste, highlights conflicting equal targets, and explains more-specific exceptions. It uses the shared apply bar and leave guard. Ads availability and the current session revision are distinct; complete verified rules update the running session automatically. See [routing and Ads](../../docs/ROUTING.md).
+- Country presets become available with verified GeoIP data. GeoSite country categories add domain matching when present; countries without them still match IP-address targets while hostname targets retain the tunnel route. CN retains its checksummed country artifact; other countries use extracted data from the checksummed shared aggregate. See the same routing guide for bounds and cache validation.
+- 国家预设下载有效 GeoIP 后即可启用；GeoSite 国家分类为可选，没有分类时仍按 IP 目标匹配，域名目标沿用隧道路由。CN 保留带校验的单国数据，其他国家从已校验的共用总库提取。
 
 Home shows a non-dismissible risk banner above the connection controls when the
 selected account has custom Zero Trust IPv4/IPv6 addresses or a still-active ZT

@@ -112,6 +112,10 @@ pub fn geoip_cache_path(cache_dir: impl AsRef<Path>, country: &CountryCode) -> P
     geoip_dir(cache_dir.as_ref()).join(format!("{country}.dat"))
 }
 
+pub(crate) fn global_geoip_cache_path(cache_dir: &Path) -> PathBuf {
+    geoip_dir(cache_dir).join("geoip.dat")
+}
+
 pub fn geosite_cache_path(cache_dir: impl AsRef<Path>, country: &CountryCode) -> PathBuf {
     geosite_dir(cache_dir.as_ref()).join(format!("{country}.txt"))
 }

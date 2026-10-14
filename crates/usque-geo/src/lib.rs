@@ -22,7 +22,8 @@ pub use cache::{
 pub use country::CountryCode;
 pub use error::{ArtifactKind, GeoError};
 pub use fetch::{
-    ALLOWED_HOSTS, FetchedBody, HttpFetch, MAX_GEOIP_BYTES, MAX_GEOSITE_BYTES, ReqwestFetch,
+    ALLOWED_HOSTS, FetchedBody, HttpFetch, MAX_GEOIP_BYTES, MAX_GEOSITE_BYTES,
+    MAX_GLOBAL_GEOIP_BYTES, ReqwestFetch,
 };
 pub use geoip::GeoIpSet;
 pub use geosite::GeoSiteSet;

@@ -101,14 +101,6 @@ pub fn validate_geo_direct_cache(profile: &Profile, cache_dir: &Path) -> Result<
             .unwrap_or_else(|| ConfigError::GeoDirectCountryNotDownloaded(String::new())),
         other => ConfigError::GeoDirectCountryNotDownloaded(other.to_string()),
     })?;
-    if let Some(country) = codes
-        .iter()
-        .find(|country| !classifier.has_geosite(country))
-    {
-        return Err(ConfigError::GeoDirectCountryNotDownloaded(
-            country.to_string(),
-        ));
-    }
     if profile.frontends.tunnel && !profile.uses_encrypted_warp_dns() {
         for server in &profile.dns_servers {
             if classifier.lookup_ip(*server).is_some() {
@@ -334,6 +326,39 @@ mod tests {
             error,
             ConfigError::GeoDirectCountryNotDownloaded(_)
         ));
+    }
+
+    #[test]
+    fn geoip_only_countries_enable_without_weakening_cache_or_dns_validation() {
+        let directory = tempfile::tempdir().unwrap();
+        let cn = CountryCode::parse("CN").unwrap();
+        let path = geoip_cache_path(directory.path(), &cn);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, GEOIP_CN).unwrap();
+        let mut profile = vpn_profile(&["CN"]);
+        assert_eq!(
+            validate_geo_direct_cache(&profile, directory.path()),
+            Ok(())
+        );
+        let (entries, _) = list_geo_rules(directory.path()).unwrap();
+        assert!(entries[0].has_geoip);
+        assert!(!entries[0].has_geosite);
+        profile.dns_servers = vec!["1.2.3.4".parse().unwrap()];
+        assert!(matches!(
+            validate_geo_direct_cache(&profile, directory.path()),
+            Err(ConfigError::VpnDnsServerBypassed(_))
+        ));
+        profile.dns_servers = vec!["1.1.1.1".parse().unwrap()];
+        std::fs::write(&path, b"invalid").unwrap();
+        assert!(matches!(
+            validate_geo_direct_cache(&profile, directory.path()),
+            Err(ConfigError::GeoDirectCountryNotDownloaded(_))
+        ));
+        std::fs::write(&path, GEOIP_CN).unwrap();
+        let geosite = usque_geo::global_geosite_cache_path(directory.path());
+        std::fs::create_dir_all(geosite.parent().unwrap()).unwrap();
+        std::fs::write(geosite, b"invalid").unwrap();
+        assert!(validate_geo_direct_cache(&profile, directory.path()).is_err());
     }
 
     #[tokio::test]
