@@ -30,17 +30,16 @@ class OnboardingPermissionCoordinatorTest {
             val coordinator = OnboardingPermissionCoordinator(host)
             val result = Result()
             coordinator.connect(result, true) { host.connections++ }
-            coordinator.finishConfirmation(true)
             coordinator.finishVpn(reportedGrant)
             assertEquals("VPN_PERMISSION_DENIED", result.code)
-            assertEquals(listOf("confirmation", "vpn"), host.launches)
+            assertEquals(listOf("vpn"), host.launches)
             assertEquals(1, result.completions)
             assertEquals(0, host.connections)
         }
     }
 
     @Test
-    fun previouslyPreparedVpnIsNotInspectedBeforeConfirmation() {
+    fun previouslyPreparedVpnConnectsWithoutAnotherPrompt() {
         val host =
             Host().apply {
                 vpn = true
@@ -48,15 +47,13 @@ class OnboardingPermissionCoordinatorTest {
             }
         val coordinator = OnboardingPermissionCoordinator(host)
         coordinator.prepare(Result())
-        coordinator.connect(Result(), true) { host.connections++ }
-        assertEquals(listOf("confirmation"), host.launches)
         assertEquals(0, host.inspections)
-        coordinator.finishConfirmation(true)
+        coordinator.connect(Result(), true) { host.connections++ }
+        assertTrue(host.launches.isEmpty())
         assertEquals(1, host.connections)
         host.vpn = false
         coordinator.connect(Result(), true) { host.connections++ }
-        coordinator.finishConfirmation(true)
-        assertEquals(listOf("confirmation", "confirmation", "vpn"), host.launches)
+        assertEquals(listOf("vpn"), host.launches)
         assertEquals(1, host.connections)
     }
 
@@ -66,7 +63,6 @@ class OnboardingPermissionCoordinatorTest {
         val coordinator = OnboardingPermissionCoordinator(host)
         val first = Result()
         coordinator.connect(first, true) { host.connections++ }
-        coordinator.finishConfirmation(true)
         coordinator.cancelConnection("VPN_PERMISSION_CANCELLED", "cancelled")
         val second = Result()
         coordinator.prepare(second)
@@ -108,58 +104,67 @@ class OnboardingPermissionCoordinatorTest {
         val host = Host()
         val coordinator = OnboardingPermissionCoordinator(host)
         coordinator.connect(Result(), true) { host.connections++ }
-        coordinator.finishConfirmation(true)
         host.vpn = true
         coordinator.finishVpn(true)
-        assertEquals(listOf("confirmation", "vpn"), host.launches)
+        assertEquals(listOf("vpn"), host.launches)
         assertEquals(1, host.connections)
         assertFalse(host.requested)
     }
 
     @Test
-    fun cancellingConfirmationDoesNotPrepareVpnAndCanBeRetried() {
-        val host = Host().apply { failVpnInspection = true }
+    fun declinedSystemAuthorizationCanBeRetried() {
+        val host = Host()
         val coordinator = OnboardingPermissionCoordinator(host)
         val first = Result()
         coordinator.connect(first, true) { host.connections++ }
-        coordinator.finishConfirmation(false)
-        coordinator.finishConfirmation(true)
-        assertEquals("VPN_PERMISSION_CANCELLED", first.code)
+        assertEquals(listOf("vpn"), host.launches)
+        coordinator.finishVpn(false)
+        coordinator.finishVpn(true)
+        assertEquals("VPN_PERMISSION_DENIED", first.code)
         assertEquals(1, first.completions)
-        assertEquals(0, host.inspections)
+        assertNull(coordinator.outstandingDialog())
         assertEquals(0, host.connections)
         coordinator.connect(Result(), true) { host.connections++ }
-        assertEquals(listOf("confirmation", "confirmation"), host.launches)
+        assertEquals(listOf("vpn", "vpn"), host.launches)
+        host.vpn = true
+        coordinator.finishVpn(true)
+        assertEquals(1, host.connections)
+        assertFalse(host.requested)
     }
 
     @Test
-    fun cancelledPendingConfirmationCannotStartAConnection() {
+    fun vpnInspectionFailureCompletesWithoutConnectingAndCanBeRetried() {
         val host = Host().apply { failVpnInspection = true }
         val coordinator = OnboardingPermissionCoordinator(host)
         val result = Result()
         coordinator.connect(result, true) { host.connections++ }
-        coordinator.cancelConnection("VPN_PERMISSION_CANCELLED", "cancelled")
-        coordinator.finishConfirmation(true)
+        assertEquals("VPN_PERMISSION_LAUNCH_FAILED", result.code)
         assertEquals(1, result.completions)
-        assertEquals(0, host.inspections)
+        assertTrue(host.launches.isEmpty())
         assertEquals(0, host.connections)
+        host.failVpnInspection = false
         coordinator.connect(Result(), true) { host.connections++ }
-        assertEquals(listOf("confirmation", "confirmation"), host.launches)
+        assertEquals(listOf("vpn"), host.launches)
     }
 
     @Test
-    fun confirmationDoesNotLeaveAStaleDialogAfterRecreation() {
+    fun recreatedActivityDrainsSystemVpnAuthorizationWithoutConnecting() {
         val host = Host()
         val original = OnboardingPermissionCoordinator(host)
         original.connect(Result(), true) { host.connections++ }
-        assertNull(original.outstandingDialog())
+        val saved = original.outstandingDialog()
+        assertEquals("VPN", saved)
         original.destroy()
-        original.finishConfirmation(true)
-        assertEquals(0, host.inspections)
+        original.finishVpn(true)
         val restored = OnboardingPermissionCoordinator(host)
-        restored.restoreOutstandingDialog(original.outstandingDialog())
+        restored.restoreOutstandingDialog(saved)
+        val busy = Result()
+        restored.connect(busy, true) { host.connections++ }
+        assertEquals("VPN_PERMISSION_IN_PROGRESS", busy.code)
+        restored.finishVpn(false)
+        assertEquals(0, host.connections)
         restored.connect(Result(), true) { host.connections++ }
-        assertEquals(listOf("confirmation", "confirmation"), host.launches)
+        assertEquals(listOf("vpn", "vpn"), host.launches)
     }
 
     @Test
@@ -168,7 +173,6 @@ class OnboardingPermissionCoordinatorTest {
         val coordinator = OnboardingPermissionCoordinator(host)
         val result = Result()
         coordinator.connect(result, true) { host.connections++ }
-        coordinator.finishConfirmation(true)
         coordinator.destroy()
         host.vpn = true
         coordinator.finishVpn(true)
@@ -222,10 +226,6 @@ class OnboardingPermissionCoordinatorTest {
         }
 
         override fun notificationState(): String = if (requested) "notGranted" else "notRequested"
-
-        override fun launchVpnConfirmation() {
-            launches.add("confirmation")
-        }
 
         override fun launchVpn() {
             launches.add("vpn")

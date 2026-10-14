@@ -2,7 +2,7 @@ package io.github.georgexie2333.usque
 
 import io.flutter.plugin.common.MethodChannel
 
-/** Keeps onboarding notification-only and defers VPN preparation until connection confirmation. */
+/** Keeps onboarding notification-only and defers VPN preparation until a connection request. */
 internal class OnboardingPermissionCoordinator(
     private val host: Host,
 ) {
@@ -11,14 +11,12 @@ internal class OnboardingPermissionCoordinator(
 
         fun notificationState(): String
 
-        fun launchVpnConfirmation()
-
         fun launchVpn()
 
         fun launchNotification()
     }
 
-    private enum class Dialog { NONE, CONFIRMATION, VPN, NOTIFICATION }
+    private enum class Dialog { NONE, VPN, NOTIFICATION }
 
     private data class Pending(
         val result: MethodChannel.Result,
@@ -30,13 +28,11 @@ internal class OnboardingPermissionCoordinator(
     private var dialog = Dialog.NONE
     private var destroyed = false
 
-    // Only system dialogs survive Activity recreation. The local confirmation is dismissed.
-    fun outstandingDialog(): String? = dialog.takeIf { it == Dialog.VPN || it == Dialog.NOTIFICATION }?.name
+    fun outstandingDialog(): String? = dialog.takeIf { it != Dialog.NONE }?.name
 
     fun restoreOutstandingDialog(value: String?) {
         if (pending == null && dialog == Dialog.NONE) {
-            dialog = Dialog.entries.firstOrNull { it.name == value && (it == Dialog.VPN || it == Dialog.NOTIFICATION) }
-                ?: Dialog.NONE
+            dialog = Dialog.entries.firstOrNull { it.name == value } ?: Dialog.NONE
         }
     }
 
@@ -68,9 +64,9 @@ internal class OnboardingPermissionCoordinator(
         }
         pending = Pending(result, requireVpn, continuation)
         try {
-            if (requireVpn) {
-                dialog = Dialog.CONFIRMATION
-                host.launchVpnConfirmation()
+            if (requireVpn && !host.vpnGranted()) {
+                dialog = Dialog.VPN
+                host.launchVpn()
             } else if (continuation == null) {
                 requestNotification()
             } else {
@@ -80,27 +76,6 @@ internal class OnboardingPermissionCoordinator(
             dialog = Dialog.NONE
             val request = pending.also { pending = null }
             request?.result?.error("VPN_PERMISSION_LAUNCH_FAILED", "Android could not request VPN permission.", null)
-        }
-    }
-
-    fun finishConfirmation(confirmed: Boolean) {
-        if (dialog != Dialog.CONFIRMATION || destroyed) return
-        dialog = Dialog.NONE
-        if (pending == null) return
-        if (!confirmed) {
-            cancel("VPN_PERMISSION_CANCELLED", "The VPN connection was cancelled.")
-            return
-        }
-        try {
-            if (host.vpnGranted()) {
-                complete()
-            } else {
-                dialog = Dialog.VPN
-                host.launchVpn()
-            }
-        } catch (_: Exception) {
-            dialog = Dialog.NONE
-            cancel("VPN_PERMISSION_LAUNCH_FAILED", "Android could not request VPN permission.")
         }
     }
 

@@ -33,6 +33,4 @@
     <string name="shortcut_profiles">Tài khoản</string>
     <string name="shortcut_long_label">%1$s Usque</string>
     <string name="vpn_notif_ip_unavailable">Đã kết nối nhưng %1$s không khả dụng. Mở Usque để xem chi tiết.</string>
-    <string name="vpn_connect_title">Kết nối với Usque?</string>
-    <string name="vpn_connect_body">Kết nối với Usque sẽ thay thế VPN khác đang hoạt động. Kết nối mạng có thể bị gián đoạn trong chốc lát khi chuyển đổi.</string>
 </resources>

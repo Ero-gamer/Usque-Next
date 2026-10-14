@@ -2,7 +2,6 @@ package io.github.georgexie2333.usque
 
 import android.Manifest
 import android.app.Activity
-import android.app.AlertDialog
 import android.app.StatusBarManager
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -68,33 +67,10 @@ class MainActivity : FlutterFragmentActivity() {
         File(noBackupFilesDir, "usque_config/profiles-v2.json").absolutePath
     }
     private val initialIdentityStateExecutor = Executors.newSingleThreadExecutor()
-    private var vpnConfirmationDialog: AlertDialog? = null
     private val permissionCoordinator: OnboardingPermissionCoordinator =
         OnboardingPermissionCoordinator(
             object : OnboardingPermissionCoordinator.Host {
                 override fun vpnGranted(): Boolean = VpnService.prepare(this@MainActivity) == null
-
-                override fun launchVpnConfirmation() {
-                    vpnConfirmationDialog =
-                        AlertDialog
-                            .Builder(this@MainActivity)
-                            .setTitle(AndroidLocaleController.getString(this@MainActivity, R.string.vpn_connect_title))
-                            .setMessage(AndroidLocaleController.getString(this@MainActivity, R.string.vpn_connect_body))
-                            .setPositiveButton(
-                                AndroidLocaleController.getString(this@MainActivity, R.string.shortcut_connect),
-                            ) { _, _ ->
-                                permissionCoordinator.finishConfirmation(true)
-                            }.setNegativeButton(
-                                AndroidLocaleController.getString(this@MainActivity, android.R.string.cancel),
-                            ) { _, _ ->
-                                permissionCoordinator.finishConfirmation(false)
-                            }.setOnCancelListener { permissionCoordinator.finishConfirmation(false) }
-                            .create()
-                            .also { dialog ->
-                                dialog.setOnDismissListener { vpnConfirmationDialog = null }
-                                dialog.show()
-                            }
-                }
 
                 override fun notificationState(): String {
                     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return "notRequired"
@@ -547,8 +523,6 @@ class MainActivity : FlutterFragmentActivity() {
         pendingChainFileResult?.success(null)
         pendingChainFileResult = null
         permissionCoordinator.destroy()
-        vpnConfirmationDialog?.dismiss()
-        vpnConfirmationDialog = null
         pendingDiagnosticsResult?.error(
             "DIAGNOSTICS_CANCELLED",
             "The Android UI closed before the diagnostic bundle was saved.",
