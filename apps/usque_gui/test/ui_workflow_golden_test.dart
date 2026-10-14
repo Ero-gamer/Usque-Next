@@ -474,9 +474,14 @@ void main() {
             home: Scaffold(
               body: Padding(
                 padding: const EdgeInsets.all(16),
-                child: RepaintBoundary(
-                  key: boundary,
-                  child: ChainProxyEntry(controller: app, onOpen: () {}),
+                child: Builder(
+                  builder: (context) => RepaintBoundary(
+                    key: boundary,
+                    child: ColoredBox(
+                      color: Theme.of(context).scaffoldBackgroundColor,
+                      child: ChainProxyEntry(controller: app, onOpen: () {}),
+                    ),
+                  ),
                 ),
               ),
             ),
