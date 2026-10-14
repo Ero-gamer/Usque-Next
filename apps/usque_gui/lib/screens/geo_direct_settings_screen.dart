@@ -447,8 +447,5 @@ class _PrivacyNote extends StatelessWidget {
 
 List<String> _orderedCountries(Set<String> enabled) {
   final countries = enabled.toList()..sort();
-  if (countries.remove('CN')) {
-    countries.insert(0, 'CN');
-  }
   return countries;
 }

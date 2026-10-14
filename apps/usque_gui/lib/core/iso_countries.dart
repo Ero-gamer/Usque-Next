@@ -1,7 +1,6 @@
-/// ISO 3166-1 alpha-2 codes with English names. CN is listed first.
+/// ISO 3166-1 alpha-2 codes with English names, sorted by code.
 const List<({String code, String name})> kIsoCountries =
     <({String code, String name})>[
-      (code: 'CN', name: 'China'),
       (code: 'AD', name: 'Andorra'),
       (code: 'AE', name: 'United Arab Emirates'),
       (code: 'AF', name: 'Afghanistan'),
@@ -49,6 +48,7 @@ const List<({String code, String name})> kIsoCountries =
       (code: 'CK', name: 'Cook Islands'),
       (code: 'CL', name: 'Chile'),
       (code: 'CM', name: 'Cameroon'),
+      (code: 'CN', name: 'China'),
       (code: 'CO', name: 'Colombia'),
       (code: 'CR', name: 'Costa Rica'),
       (code: 'CU', name: 'Cuba'),
