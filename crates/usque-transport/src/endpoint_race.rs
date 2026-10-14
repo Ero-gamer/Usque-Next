@@ -257,7 +257,6 @@ pub(crate) fn h2_candidates(
     let mut ipv6 = Vec::new();
     for prefix in policy.ipv6_prefixes() {
         let mut addresses = HashSet::with_capacity(256);
-        addresses.insert(Ipv6Addr::from(u128::from(prefix) | 1));
         addresses.insert(Ipv6Addr::from(u128::from(prefix) | 2));
         for _ in 0..2048 {
             if addresses.len() == usque_core::endpoints::AUTOMATIC_H2_IPV6_PER_PREFIX {
@@ -266,8 +265,14 @@ pub(crate) fn h2_candidates(
             let mut random = [0_u8; 16];
             boring::rand::rand_bytes(&mut random)?;
             let suffix = u128::from_be_bytes(random) & ((1_u128 << 80) - 1);
-            if suffix != 0 {
-                addresses.insert(Ipv6Addr::from(u128::from(prefix) | suffix));
+            let address = Ipv6Addr::from(u128::from(prefix) | suffix);
+            if suffix != 0
+                && policy.permits(
+                    SocketAddr::new(address.into(), policy.port),
+                    usque_core::Transport::Http2,
+                )
+            {
+                addresses.insert(address);
             }
         }
         if addresses.len() != usque_core::endpoints::AUTOMATIC_H2_IPV6_PER_PREFIX {
@@ -470,18 +475,31 @@ mod tests {
     }
 
     #[test]
-    fn h2_cycle_is_finite_unique_and_contains_fixed_h3_hosts() {
+    fn h2_cycle_is_finite_unique_and_contains_only_admitted_hosts() {
         let policy = policy();
         let (mut ipv4, mut ipv6) = h2_candidates(policy).unwrap();
-        assert_eq!(ipv4.len() + ipv6.len(), 1024);
+        assert_eq!(ipv4.len() + ipv6.len(), 1022);
         let all = ipv4.iter().chain(&ipv6).copied().collect::<HashSet<_>>();
-        assert_eq!(all.len(), 1024);
+        assert_eq!(all.len(), 1022);
+        assert!(
+            all.iter()
+                .all(|endpoint| policy.permits(*endpoint, usque_core::Transport::Http2))
+        );
         assert!(
             policy
                 .h3_candidates()
                 .iter()
+                .filter(|endpoint| policy.permits(**endpoint, usque_core::Transport::Http2))
                 .all(|address| all.contains(address))
         );
+        for target in [
+            "162.159.198.1:443",
+            "162.159.199.1:443",
+            "[2606:4700:103::1]:443",
+            "[2606:4700:104::1]:443",
+        ] {
+            assert!(!all.contains(&target.parse().unwrap()));
+        }
         let mut visited = HashSet::new();
         while !ipv4.is_empty() || !ipv6.is_empty() {
             let batch = next_h2_batch(&mut ipv4, &mut ipv6);
@@ -509,8 +527,10 @@ mod tests {
                 .count(),
             5
         );
-        assert_eq!(batch[0].endpoint, "[2606:4700:103::1]:443".parse().unwrap());
-        assert_eq!(batch[5].endpoint, "162.159.198.1:443".parse().unwrap());
+        assert_eq!(batch[0].endpoint, "[2606:4700:103::2]:443".parse().unwrap());
+        assert_eq!(batch[1].endpoint, "[2606:4700:104::2]:443".parse().unwrap());
+        assert_eq!(batch[5].endpoint, "162.159.198.2:443".parse().unwrap());
+        assert_eq!(batch[6].endpoint, "162.159.199.2:443".parse().unwrap());
         assert!(batch[..5].iter().all(|target| target.delay.is_zero()));
         assert!(batch[5..].iter().all(|target| target.delay == FAMILY_DELAY));
     }
@@ -536,7 +556,7 @@ mod tests {
             .ipv6_prefixes()
             .into_iter()
             .flat_map(|prefix| {
-                (1..=256_u128).map(move |suffix| {
+                (2..=257_u128).map(move |suffix| {
                     SocketAddr::new(
                         Ipv6Addr::from(u128::from(prefix) | suffix).into(),
                         policy.port,
@@ -545,7 +565,9 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let expected = ipv4.iter().chain(&ipv6).copied().collect::<HashSet<_>>();
-        let last_endpoint = ipv4[0];
+        // IPv6 retains 256 samples per prefix while IPv4 excludes .1, so
+        // the final batch now contains the remaining IPv6 candidates.
+        let last_endpoint = ipv6[0];
         let identity = Arc::new(());
         let closed = Arc::new(AtomicUsize::new(0));
         let visited = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -589,7 +611,7 @@ mod tests {
         assert!(ipv4.is_empty() && ipv6.is_empty());
         {
             let visited = visited.lock().unwrap();
-            assert_eq!(visited.len(), 1024);
+            assert_eq!(visited.len(), 1022);
             assert_eq!(visited.iter().copied().collect::<HashSet<_>>(), expected);
         }
         assert!(Arc::ptr_eq(&winner.identity, &identity));

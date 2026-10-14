@@ -89,7 +89,7 @@ The endpoint picker refreshes when capabilities arrive without replacing drafts.
 | Transport | Free IPv4 | Plus IPv4 | Free IPv6 | Plus IPv6 |
 | --- | --- | --- | --- | --- |
 | H3 | `162.159.198.1`, `.2`; `162.159.199.1`, `.2` | `162.159.199.1`, `.2` | `2606:4700:103::1`, `::2`; `2606:4700:104::1`, `::2` | `2606:4700:104::1`, `::2` |
-| H2 | `162.159.198.0/24`, `162.159.199.0/24` | `162.159.199.0/24` | `2606:4700:103::/48`, `2606:4700:104::/48` | `2606:4700:104::/48` |
+| H2 | `162.159.198.0/24`, `162.159.199.0/24`, excluding each `.1` | `162.159.199.0/24`, excluding `.1` | `2606:4700:103::/48`, `2606:4700:104::/48`, excluding each `::1` | `2606:4700:104::/48`, excluding `::1` |
 
 Pool eligibility uses authenticated Consumer entitlement, not the raw API
 `warp_plus` boolean. Unknown legacy entitlement uses the Plus-compatible common
@@ -103,8 +103,14 @@ H3 races all admitted addresses, preserving the preferred-family 250 ms head
 start and existing 8-second startup timeout/compatibility retry. The Auto IP
 policy retains its existing IPv6 preference; IPv4/IPv6-only policies strictly
 filter the other family. H2 enumerates
-all 256 IPv4 addresses per admitted /24 and samples 256 unique IPv6 addresses
-per /48, including `::1` and `::2`. Subsequent rounds resample IPv6. Known hosts
+255 IPv4 addresses per admitted /24, excluding `.1`, and samples 256 unique
+IPv6 addresses per /48, including `::2` and excluding `::1`. The exclusion is
+the exact first host of each prefix, not every IPv6 address ending in `:1`.
+The `.1` TCP endpoints can present an ordinary HTTPS certificate instead of
+the enrolled MASQUE public key. H2 Automatic excludes these hosts and their
+IPv6 counterparts from both selection and endpoint authorization; H3 keeps
+its existing host set. 后缀 `.1` 与各前缀的 `::1` 已从 H2 自动端点中排除。
+Subsequent rounds resample IPv6. Known `.2` / `::2` hosts
 come first; remaining addresses are shuffled. Each H2 batch admits at most ten
 attempts, normally five per family, with one absolute two-second deadline from
 batch start. In dual-stack batches the preferred family starts immediately and

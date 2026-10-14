@@ -65,6 +65,11 @@ impl AutomaticEndpointPolicy {
                 if octets[..2] != [162, 159] {
                     return false;
                 }
+                // The .1 hosts serve ordinary HTTPS certificates over TCP,
+                // rather than the enrolled MASQUE key. Keep them for H3 only.
+                if transport == Transport::Http2 && octets[3] == 1 {
+                    return false;
+                }
                 if transport == Transport::Http3 && !matches!(octets[3], 1 | 2) {
                     return false;
                 }
@@ -73,6 +78,9 @@ impl AutomaticEndpointPolicy {
             IpAddr::V6(ip) if self.ipv6 => {
                 let segments = ip.segments();
                 if segments[..2] != [0x2606, 0x4700] {
+                    return false;
+                }
+                if transport == Transport::Http2 && segments[3..] == [0, 0, 0, 0, 1] {
                     return false;
                 }
                 if transport == Transport::Http3
@@ -148,6 +156,7 @@ impl AutomaticEndpointPolicy {
                     SocketAddr::new(Ipv4Addr::new(162, 159, third, last).into(), self.port)
                 })
             })
+            .filter(|endpoint| self.permits(*endpoint, Transport::Http2))
             .collect()
     }
 
@@ -257,8 +266,37 @@ mod tests {
         }
         assert_eq!(free.h3_candidates().len(), 8);
         assert_eq!(plus.h3_candidates().len(), 4);
-        assert_eq!(free.h2_ipv4_candidates().len(), 512);
+        assert_eq!(free.h2_ipv4_candidates().len(), 510);
+        assert_eq!(plus.h2_ipv4_candidates().len(), 255);
         assert_eq!(EndpointPool::from_entitlement(None), EndpointPool::WarpPlus);
+    }
+
+    #[test]
+    fn h2_excludes_first_hosts_without_changing_h3_or_other_ipv6_hosts() {
+        for pool in [EndpointPool::Free, EndpointPool::WarpPlus] {
+            let policy = policy(pool);
+            for endpoint in policy.h3_candidates() {
+                let first_host = match endpoint.ip() {
+                    IpAddr::V4(ip) => ip.octets()[3] == 1,
+                    IpAddr::V6(ip) => ip.segments()[7] == 1,
+                };
+                assert!(policy.permits(endpoint, Transport::Http3));
+                assert_eq!(policy.permits(endpoint, Transport::Http2), !first_host);
+            }
+            assert!(
+                policy
+                    .h2_ipv4_candidates()
+                    .iter()
+                    .all(|endpoint| policy.permits(*endpoint, Transport::Http2))
+            );
+        }
+        for target in [
+            "[2606:4700:103:1::1]:443",
+            "[2606:4700:104:1::1]:443",
+            "[2606:4700:104::101]:443",
+        ] {
+            assert!(policy(EndpointPool::Free).permits(target.parse().unwrap(), Transport::Http2));
+        }
     }
 
     #[test]
