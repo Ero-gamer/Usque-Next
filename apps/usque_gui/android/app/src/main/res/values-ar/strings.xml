@@ -30,7 +30,6 @@
     <string name="tile_proxy_only">الوكيل المحلي وحده نشط. افتح صفحة الوكيل في Usque وفعّل VPN.</string>
     <string name="shortcut_connect">اتصال</string>
     <string name="shortcut_disconnect">قطع الاتصال</string>
-    <string name="shortcut_profiles">حسابات</string>
-    <string name="shortcut_long_label">%1$s Usque</string>
+    <string name="shortcut_profiles">إدارة الحسابات</string>
     <string name="vpn_notif_ip_unavailable">متصل، لكن %1$s غير متاح. افتح Usque للاطلاع على التفاصيل.</string>
 </resources>

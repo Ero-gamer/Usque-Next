@@ -30,7 +30,6 @@
     <string name="tile_proxy_only">ローカルプロキシのみ有効です。Usque の「プロキシ」で VPN を有効にしてください。</string>
     <string name="shortcut_connect">接続</string>
     <string name="shortcut_disconnect">切断</string>
-    <string name="shortcut_profiles">アカウント</string>
-    <string name="shortcut_long_label">%1$s Usque</string>
+    <string name="shortcut_profiles">アカウント管理</string>
     <string name="vpn_notif_ip_unavailable">接続済みですが、%1$s は利用できません。Usque で詳細を確認してください。</string>
 </resources>

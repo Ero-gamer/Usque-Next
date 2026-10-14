@@ -30,7 +30,6 @@
     <string name="tile_proxy_only">เปิดใช้เฉพาะพร็อกซีภายในเครื่องอยู่ เปิดหน้าพร็อกซีใน Usque แล้วเปิดใช้ VPN</string>
     <string name="shortcut_connect">เชื่อมต่อ</string>
     <string name="shortcut_disconnect">ตัดการเชื่อมต่อ</string>
-    <string name="shortcut_profiles">บัญชี</string>
-    <string name="shortcut_long_label">%1$s Usque</string>
+    <string name="shortcut_profiles">จัดการบัญชี</string>
     <string name="vpn_notif_ip_unavailable">เชื่อมต่อแล้ว แต่ %1$s ใช้งานไม่ได้ เปิด Usque เพื่อดูรายละเอียด</string>
 </resources>

@@ -30,7 +30,6 @@
     <string name="tile_proxy_only">目前僅啟用本機代理。請開啟 Usque 的「代理」頁面並啟用 VPN。</string>
     <string name="shortcut_connect">連線</string>
     <string name="shortcut_disconnect">中斷</string>
-    <string name="shortcut_profiles">帳戶</string>
-    <string name="shortcut_long_label">%1$s Usque</string>
+    <string name="shortcut_profiles">管理帳號</string>
     <string name="vpn_notif_ip_unavailable">已連線，但 %1$s 無法使用。請開啟 Usque 查看詳情。</string>
 </resources>

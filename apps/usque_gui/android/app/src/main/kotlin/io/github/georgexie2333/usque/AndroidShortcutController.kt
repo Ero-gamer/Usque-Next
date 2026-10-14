@@ -46,7 +46,7 @@ internal object AndroidShortcutController {
         ShortcutInfo
             .Builder(context, id)
             .setShortLabel(label)
-            .setLongLabel(AndroidLocaleController.getString(context, R.string.shortcut_long_label, label))
+            .setLongLabel(label)
             .setIcon(icon)
             .setIntent(
                 Intent(context, MainActivity::class.java)

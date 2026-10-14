@@ -30,7 +30,6 @@
     <string name="tile_proxy_only">È attivo solo un proxy locale. Apri Proxy in Usque e attiva VPN.</string>
     <string name="shortcut_connect">Connetti</string>
     <string name="shortcut_disconnect">Disconnetti</string>
-    <string name="shortcut_profiles">Account</string>
-    <string name="shortcut_long_label">%1$s Usque</string>
+    <string name="shortcut_profiles">Gestisci account</string>
     <string name="vpn_notif_ip_unavailable">Connesso, ma %1$s non è disponibile. Apri Usque per i dettagli.</string>
 </resources>
