@@ -29,6 +29,11 @@ using Default.
 
 ## Zero Trust endpoint editing / Zero Trust 端点编辑
 
+Built-in presets use the separate preset picker below and do not show the
+manual-endpoint warning. The warning still applies to manually entered Zero
+Trust addresses, including a running session using a manually overridden IPv4
+fallback. Saving a preset does not erase those retained manual addresses.
+
 Open **Settings → Advanced network settings → Edit Zero Trust endpoints**.
 Each page visit starts locked. Read the red fullscreen warning, acknowledge the
 risks and your authorization, then edit IPv4/IPv6 and choose **Apply changes**.
@@ -47,6 +52,9 @@ the running session uses them or disconnects.
 及授权声明后编辑，点击 **应用修改** 保存。每次进入页面都需重新确认，取消、
 Esc 或返回不会解锁。恢复默认暂存注册地址，应用后清除覆盖；重新登录成功也会
 清除覆盖。端口和 SNI 继续共享，ZT 不提供自动选择。保存失败保留草稿。
+
+内置预设可直接选择，无需手动端点风险确认；手动填写地址仍需确认。实际回退到
+手动覆盖的 Zero Trust IPv4 时仍显示风险提示。预设不会删除保留的手动地址。
 
 Implementation notes: capability field 45, `zero_trust_endpoint_editing`, gates this editor. Missing
 support keeps the old read-only behavior. Registered addresses are read-only
@@ -85,6 +93,48 @@ The endpoint picker refreshes when capabilities arrive without replacing drafts.
 从自动端点的代理连接开启系统 VPN 时会重新连接，以取得新 VPN 会话的端点保护。
 启动时能力查询暂时失败会自动重试。
 能力信息返回后端点选择控件立即刷新，并保留未应用的草稿。
+
+### Built-in IPv6 presets / 内置 IPv6 预设
+
+Open **Settings → Advanced network settings → Endpoint → Custom → Built-in
+presets**, choose a country, and **Apply changes**. Zero Trust can open the
+built-in picker directly. The country is shared across accounts; the native
+engine matches the preset to the authenticated account. The available countries
+are United States, Germany and Finland. The picker shows the country and a short
+IPv6-only hint. An unverified account must be verified before using a preset.
+
+Selecting a preset guides incompatible IP policies to **IPv6 endpoint only**
+(recommended) or **Prefer IPv6 endpoint**. Cancel leaves the draft unchanged.
+IPv6-only stops on failure. Prefer IPv6 tries the preset first, then the retained
+IPv4 endpoint after retryable failures; the fallback may be in another country.
+Zero Trust uses its account-specific registered or saved manual IPv4 address.
+Authentication, endpoint-pin and socket-protection failures retain their
+existing terminal/limited-refresh behavior and cannot trigger a bypass.
+
+Each new connection or reconnect resolves AAAA records on the physical network,
+retaining at most 16 unique usable IPv6 candidates for that attempt and network
+generation. DNS failure can use IPv4 only under Prefer IPv6. Resolved IPs are
+never saved in place of the country selection. Port and SNI keep their existing
+values; preset resolution only selects the endpoint address. The normal
+observed exit region remains authoritative, including with a chain exit.
+
+Schema 26 adds optional `endpoint.preset_region` (`us`, `de`, `fi`). Older
+configurations default to no preset. Saving Automatic or Manual entry and
+restoring defaults clear the active preset while retaining numeric custom
+addresses. Reauthentication keeps the shared country and clears the manual ZT
+override as before. Public endpoint field 6, capability field 49 and connection
+source field 24 are append-only. Missing Engine or Windows Agent support is an
+explicit upgrade error. Windows uses separate exact DNS/data leases and
+volatile candidate authorization scoped to the operation and physical-network
+generation; retained observation anchors grant no preset data authorization.
+
+进入 **设置 → 高级网络设置 → 端点 → 自定义 → 内置预设**，选择国家后点击
+**应用修改**。可选择美国、德国、芬兰，国家由所有账号共享，按已验证的账号自动匹配。
+界面显示国家和“仅使用 IPv6 端点”简短说明。
+选择时按需引导至“仅使用 IPv6 端点”或“优先 IPv6 端点”；取消不改变草稿。
+优先 IPv6 失败后可使用原 IPv4，界面会提示地区可能变化。每次连接或重连重新
+解析，不保存解析得到的 IP；端口、SNI 和真实出口地区显示沿用现有设置及观测。
+前端仅显示短标签和必要的状态说明，完整行为以本节为准。
 
 | Transport | Free IPv4 | Plus IPv4 | Free IPv6 | Plus IPv6 |
 | --- | --- | --- | --- | --- |

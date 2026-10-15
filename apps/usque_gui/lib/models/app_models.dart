@@ -56,6 +56,35 @@ enum TlsFingerprint {
 
 enum EndpointSelection { automatic, custom }
 
+/// Mirrors Rust's allowlisted registry; hosts depend on the verified identity.
+enum EndpointPresetRegion {
+  us,
+  de,
+  fi;
+
+  static EndpointPresetRegion? parse(Object? value) {
+    if (value == null || value == '') return null;
+    return values.firstWhere(
+      (region) => region.name == value,
+      orElse: () =>
+          throw const FormatException('Invalid endpoint preset region'),
+    );
+  }
+
+  String? hostname(ProfileIdentityStatus identity) {
+    if (identity.state != ProfileIdentityState.ready) return null;
+    final tier = switch (identity.provider) {
+      IdentityProvider.zeroTrust => 'zt',
+      IdentityProvider.consumer => switch (identity.licenseState) {
+        LicenseState.free => 'free',
+        LicenseState.warpPlus => 'plus',
+        _ => null,
+      },
+    };
+    return tier == null ? null : '$name.v6.$tier.orangesky.dev';
+  }
+}
+
 enum CongestionControlAlgorithm {
   cubic('cubic'),
   reno('reno'),
@@ -842,6 +871,7 @@ class UsqueProfile {
     this.tlsFingerprint = TlsFingerprint.defaultProfile,
     this.ipPolicy = IpPolicy.automatic,
     this.endpointSelection = EndpointSelection.automatic,
+    this.endpointPresetRegion,
     this.endpointIpv4 = defaultEndpointIpv4,
     this.endpointIpv6 = defaultEndpointIpv6,
     this.endpointPort = defaultEndpointPort,
@@ -884,6 +914,7 @@ class UsqueProfile {
   final TlsFingerprint tlsFingerprint;
   final IpPolicy ipPolicy;
   final EndpointSelection endpointSelection;
+  final EndpointPresetRegion? endpointPresetRegion;
   final String endpointIpv4;
   final String endpointIpv6;
   final int endpointPort;
@@ -945,6 +976,7 @@ class UsqueProfile {
       dataPlane: DataPlaneMode.connectIp,
       ipPolicy: IpPolicy.automatic,
       endpointSelection: EndpointSelection.automatic,
+      clearEndpointPresetRegion: true,
       endpointIpv4: defaultEndpointIpv4,
       endpointIpv6: defaultEndpointIpv6,
       endpointPort: defaultEndpointPort,
@@ -971,6 +1003,8 @@ class UsqueProfile {
     TlsFingerprint? tlsFingerprint,
     IpPolicy? ipPolicy,
     EndpointSelection? endpointSelection,
+    EndpointPresetRegion? endpointPresetRegion,
+    bool clearEndpointPresetRegion = false,
     String? endpointIpv4,
     String? endpointIpv6,
     int? endpointPort,
@@ -1009,6 +1043,9 @@ class UsqueProfile {
       tlsFingerprint: tlsFingerprint ?? this.tlsFingerprint,
       ipPolicy: ipPolicy ?? this.ipPolicy,
       endpointSelection: endpointSelection ?? this.endpointSelection,
+      endpointPresetRegion: clearEndpointPresetRegion
+          ? null
+          : endpointPresetRegion ?? this.endpointPresetRegion,
       endpointIpv4: endpointIpv4 ?? this.endpointIpv4,
       endpointIpv6: endpointIpv6 ?? this.endpointIpv6,
       endpointPort: endpointPort ?? this.endpointPort,
@@ -1047,6 +1084,7 @@ class UsqueProfile {
       'tls_fingerprint': tlsFingerprint.wireName,
       'ip_policy': ipPolicy.name,
       'endpoint_selection': endpointSelection.name,
+      'endpoint_preset_region': endpointPresetRegion?.name,
       'endpoint_v4': endpointIpv4,
       'endpoint_v6': endpointIpv6,
       'endpoint_port': endpointPort,
@@ -1147,6 +1185,9 @@ class UsqueProfile {
               _string(map, 'endpoint_selection'),
             )
           : EndpointSelection.custom,
+      endpointPresetRegion: EndpointPresetRegion.parse(
+        map['endpoint_preset_region'],
+      ),
       endpointIpv4: _string(map, 'endpoint_v4'),
       endpointIpv6: _string(map, 'endpoint_v6'),
       endpointPort: _boundedInt(map, 'endpoint_port', 1, 65535),
@@ -2103,6 +2144,7 @@ class EngineCapabilities {
     this.routingRules = false,
     this.liveAdsRules = false,
     this.automaticEndpoints = false,
+    this.endpointPresets = false,
     this.zeroTrustEndpointEditing = false,
     this.chainOpenvpnMultiEndpoint = false,
     this.vpnGatePoolFavorites = false,
@@ -2137,6 +2179,7 @@ class EngineCapabilities {
     routingRules: map['routing_rules'] == true,
     liveAdsRules: map['live_ads_rules'] == true,
     automaticEndpoints: map['automatic_endpoints'] == true,
+    endpointPresets: map['endpoint_presets'] == true,
     zeroTrustEndpointEditing: map['zero_trust_endpoint_editing'] == true,
     chainOpenvpnMultiEndpoint: map['chain_openvpn_multi_endpoint'] == true,
     vpnGatePoolFavorites: map['vpn_gate_pool_favorites'] == true,
@@ -2174,6 +2217,7 @@ class EngineCapabilities {
   final bool routingRules;
   final bool liveAdsRules;
   final bool automaticEndpoints;
+  final bool endpointPresets;
   final bool zeroTrustEndpointEditing;
   final bool networkQuality;
   final bool vpnGateTcp;
@@ -2217,6 +2261,7 @@ class EngineCapabilities {
           routingRules == other.routingRules &&
           liveAdsRules == other.liveAdsRules &&
           automaticEndpoints == other.automaticEndpoints &&
+          endpointPresets == other.endpointPresets &&
           zeroTrustEndpointEditing == other.zeroTrustEndpointEditing &&
           chainOpenvpnMultiEndpoint == other.chainOpenvpnMultiEndpoint &&
           vpnGatePoolFavorites == other.vpnGatePoolFavorites &&
@@ -2257,6 +2302,7 @@ class EngineCapabilities {
       routingRules,
       liveAdsRules,
       automaticEndpoints,
+      endpointPresets,
       zeroTrustEndpointEditing,
     ),
     chainOpenvpnMultiEndpoint,
@@ -2411,6 +2457,7 @@ class L4Snapshot {
 class EngineSnapshot {
   const EngineSnapshot({
     this.adsRuleRevision = '',
+    this.endpointSource,
     this.vpnGate = const VpnGateStatus(),
     this.chainExit = const ChainExitStatus(),
     this.sessionCongestionControl,
@@ -2439,6 +2486,7 @@ class EngineSnapshot {
   });
 
   final String adsRuleRevision;
+  final String? endpointSource;
   final ConnectionPhase phase;
   final VpnGateStatus vpnGate;
   final ChainExitStatus chainExit;
@@ -2486,6 +2534,7 @@ class EngineSnapshot {
     final connectedAt = map['connected_at'] as String?;
     return EngineSnapshot(
       adsRuleRevision: map['ads_rule_revision'] as String? ?? '',
+      endpointSource: map['endpoint_source'] as String?,
       phase: parsePhase(map['phase'] as String?),
       dataPlane: DataPlaneMode.fromWire(map['data_plane']),
       l4: map['l4'] is Map ? L4Snapshot.fromMap(map['l4'] as Map) : null,
@@ -2574,6 +2623,7 @@ class EngineSnapshot {
     return identical(this, other) ||
         other is EngineSnapshot &&
             adsRuleRevision == other.adsRuleRevision &&
+            endpointSource == other.endpointSource &&
             sessionCongestionControl == other.sessionCongestionControl &&
             dataPlane == other.dataPlane &&
             vpnGate == other.vpnGate &&
@@ -2604,6 +2654,7 @@ class EngineSnapshot {
   @override
   int get hashCode => Object.hashAll(<Object?>[
     adsRuleRevision,
+    endpointSource,
     sessionCongestionControl,
     dataPlane,
     vpnGate,

@@ -610,7 +610,7 @@ async fn run(
     {
         *deadline = None;
     }
-    update_health(&status, &tunnel);
+    update_health(&status, &tunnel, &profile);
     update_frontends(&status, &tunnel);
     let _ = started.send(START_OK);
     let gate_context = GateContext {
@@ -877,7 +877,7 @@ async fn run_session(
                 SessionDataEvent::Tick => {
                     let quality = tunnel.subscribe_network_quality().borrow().clone();
                     super::connection_timeline::publish_for(timeline_generation, tunnel.connection_timeline(), quality.connection_id.map(|id| id.0), false);
-                    update_health(&status, &tunnel);
+                    update_health(&status, &tunnel, &profile);
                     update_frontends(&status, &tunnel);
                     if matches!(tunnel.health(), RuntimeHealth::Failed { .. }) {
                         break;
@@ -1002,7 +1002,7 @@ async fn handle_runtime_command(
                 tunnel
                     .fail_gate(usque_core::vpngate::GateFailure::Configuration)
                     .await;
-                update_health(status, tunnel);
+                update_health(status, tunnel, profile);
                 update_frontends(status, tunnel);
             }
             let _ = reply.send(RECONFIGURE_OK);
@@ -1267,13 +1267,19 @@ fn apply_exit(snapshot: &mut NativeSnapshot, exit: usque_core::ExitInfo) {
     snapshot.exit_flag_svg = flag_svg;
 }
 
-fn update_health(status: &Arc<Mutex<NativeSnapshot>>, tunnel: &DataPlaneRuntime) {
+fn update_health(
+    status: &Arc<Mutex<NativeSnapshot>>,
+    tunnel: &DataPlaneRuntime,
+    profile: &Profile,
+) {
     let health = tunnel.health();
     let gate = tunnel.gate_status();
     let Ok(mut snapshot) = status.lock() else {
         return;
     };
     let path = health.path();
+    snapshot.endpoint_source =
+        usque_core::EndpointSource::for_profile(profile, path.endpoint_family);
     snapshot.transport = Some(
         match path.transport {
             Transport::Http3 => "h3",

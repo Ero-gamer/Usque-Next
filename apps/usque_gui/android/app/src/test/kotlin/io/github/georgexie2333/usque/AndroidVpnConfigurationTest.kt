@@ -128,6 +128,23 @@ class AndroidVpnConfigurationTest {
     }
 
     @Test
+    fun presetsValidateRegionAndPolicyWithoutUsingDormantManualIpv6() {
+        val source =
+            jsonProfile()
+                .put("endpoint_selection", "custom")
+                .put("endpoint_preset_region", "us")
+                .put("ip_policy", "ipv6Only")
+                .put("endpoint_v6", "2606:4700:4700::1111")
+        AndroidVpnProfile.parse(source.toString())
+        source.put("ip_policy", "automatic")
+        assertThrows(IllegalArgumentException::class.java) { AndroidVpnProfile.parse(source.toString()) }
+        source.put("ip_policy", "preferIpv6").put("endpoint_preset_region", "invalid")
+        assertThrows(IllegalArgumentException::class.java) { AndroidVpnProfile.parse(source.toString()) }
+        source.put("endpoint_preset_region", "fi").put("endpoint_v4", "1.1.1.1")
+        assertThrows(IllegalArgumentException::class.java) { AndroidVpnProfile.parse(source.toString()) }
+    }
+
+    @Test
     fun automaticIgnoresDormantCustomDnsClashesButLegacyCustomRemainsStrict() {
         val source = jsonProfile().put("endpoint_v4", "1.1.1.1")
         assertThrows(IllegalArgumentException::class.java) { AndroidVpnProfile.parse(source.toString()) }

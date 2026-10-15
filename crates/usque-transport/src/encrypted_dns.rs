@@ -1792,6 +1792,37 @@ impl SocketProtector for ConfiguredDnsProtector {
             .await
             .map_err(|error| error.to_string())
     }
+    async fn resolve_endpoint_preset(
+        &self,
+        host: &str,
+        port: u16,
+        expected_generation: u64,
+    ) -> Result<Vec<SocketAddr>, String> {
+        self.protector
+            .resolve_endpoint_preset(host, port, expected_generation)
+            .await
+    }
+    async fn authorize_endpoint_preset_candidates(
+        &self,
+        host: &str,
+        candidates: &[SocketAddr],
+        expected_generation: u64,
+    ) -> Result<(), String> {
+        self.protector
+            .authorize_endpoint_preset_candidates(host, candidates, expected_generation)
+            .await
+    }
+    async fn protect_endpoint_preset_dns_generation(
+        &self,
+        socket: SocketHandle,
+        remote: SocketAddr,
+        protocol: DirectProtocol,
+        expected_generation: u64,
+    ) -> Result<DirectEgressLease, String> {
+        self.protector
+            .protect_endpoint_preset_dns_generation(socket, remote, protocol, expected_generation)
+            .await
+    }
     fn direct_dns_resolver(&self) -> Option<Arc<DirectDnsResolver>> {
         Some(Arc::clone(&self.resolver))
     }

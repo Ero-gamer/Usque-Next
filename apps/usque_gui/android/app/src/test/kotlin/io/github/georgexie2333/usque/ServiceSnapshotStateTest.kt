@@ -11,6 +11,21 @@ import org.junit.Test
 
 class ServiceSnapshotStateTest {
     @Test
+    fun presetEndpointSourceIsObservedAllowlistedAndCleared() {
+        val snapshot = state()
+        for (source in listOf("preset_ipv6", "manual_ipv4_fallback")) {
+            snapshot.applyNativeSnapshot(JSONObject().put("phase", "connected").put("endpoint_source", source))
+            assertEquals(source, snapshot.endpointSource)
+            assertEquals(source, snapshot.wireEntries(platform())[ServiceSnapshotState.WireKeys.ENDPOINT_SOURCE])
+        }
+        snapshot.applyNativeSnapshot(JSONObject().put("endpoint_source", "untrusted"))
+        assertNull(snapshot.endpointSource)
+        snapshot.endpointSource = "preset_ipv6"
+        snapshot.reset("disconnected")
+        assertNull(snapshot.endpointSource)
+    }
+
+    @Test
     fun adsRevisionIsObservedValidatedAndCleared() {
         val snapshot = state()
         val revision = "a".repeat(64)
@@ -300,6 +315,7 @@ class ServiceSnapshotStateTest {
                 keys.NETWORK_QUALITY,
                 keys.SESSION_CONGESTION_CONTROL,
                 keys.ADS_RULE_REVISION,
+                keys.ENDPOINT_SOURCE,
                 keys.DATA_PLANE,
                 keys.L4,
                 keys.VPN_GATE,

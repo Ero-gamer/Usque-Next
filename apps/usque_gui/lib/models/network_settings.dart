@@ -102,6 +102,7 @@ Map<String, Object?> _fields(UsqueProfile p) => {
   'congestion_control': p.congestionControl,
   'tls_fingerprint': p.tlsFingerprint,
   'endpoint.selection': p.endpointSelection,
+  'endpoint.preset_region': p.endpointPresetRegion,
   'endpoint.ipv4': p.endpointIpv4,
   'endpoint.ipv6': p.endpointIpv6,
   'endpoint.port': p.endpointPort,

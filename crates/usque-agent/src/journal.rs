@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::plan::{PlanError, ValidatedTunnelPlan};
 
-pub const JOURNAL_SCHEMA_VERSION: u32 = 5;
+pub const JOURNAL_SCHEMA_VERSION: u32 = 6;
 pub const MAX_JOURNAL_BYTES: u64 = 1024 * 1024;
 pub const MAX_JOURNAL_STEPS: usize = 16;
 pub(crate) const WFP_PROVIDER_KEY: Uuid = Uuid::from_u128(0x6d70fda5_3fa2_4c36_a86c_88650b58f013);
@@ -479,7 +479,7 @@ fn validate_receipt(
             sublayer_key,
         } => {
             let plan = tunnel_plan.expect("validated tunnel operation");
-            if plan.automatic_endpoint_policy.is_none()
+            if (plan.automatic_endpoint_policy.is_none() && plan.preset_endpoint_policy.is_none())
                 || *provider_key != WFP_PROVIDER_KEY
                 || *sublayer_key != WFP_SUBLAYER_KEY
             {
@@ -772,6 +772,28 @@ impl JournalStore {
             return Err(JournalError::TooLarge(bytes.len() as u64));
         }
         let mut journal: RecoveryJournal = serde_json::from_slice(&bytes)?;
+        if journal.schema_version < 6
+            && (journal
+                .plan
+                .as_ref()
+                .is_some_and(|plan| plan.preset_endpoint_policy.is_some())
+                || journal.replacement.as_ref().is_some_and(|replacement| {
+                    replacement
+                        .original_source_plan
+                        .preset_endpoint_policy
+                        .is_some()
+                        || replacement
+                            .guard_plan
+                            .target
+                            .preset_endpoint_policy
+                            .is_some()
+                }))
+        {
+            return Err(JournalError::Schema {
+                found: journal.schema_version,
+                supported: JOURNAL_SCHEMA_VERSION,
+            });
+        }
         if journal.schema_version < 5 && journal.replacement.is_some() {
             return Err(JournalError::InvalidReplacement);
         }
@@ -781,14 +803,12 @@ impl JournalStore {
             return Err(JournalError::InvalidDevice);
         }
         if matches!(journal.schema_version, 2 | 3) {
-            if journal
-                .plan
-                .as_ref()
-                .is_some_and(|plan| plan.automatic_endpoint_policy.is_some())
-                || journal
-                    .steps
-                    .iter()
-                    .any(|step| step.kind == MutationKind::WfpMetadata)
+            if journal.plan.as_ref().is_some_and(|plan| {
+                plan.automatic_endpoint_policy.is_some() || plan.preset_endpoint_policy.is_some()
+            }) || journal
+                .steps
+                .iter()
+                .any(|step| step.kind == MutationKind::WfpMetadata)
             {
                 return Err(JournalError::Schema {
                     found: journal.schema_version,
@@ -798,6 +818,9 @@ impl JournalStore {
             journal.schema_version = JOURNAL_SCHEMA_VERSION;
         }
         if journal.schema_version == 4 {
+            journal.schema_version = JOURNAL_SCHEMA_VERSION;
+        }
+        if journal.schema_version == 5 {
             journal.schema_version = JOURNAL_SCHEMA_VERSION;
         }
         journal.validate()?;
@@ -1016,6 +1039,7 @@ mod tests {
             vpn_chain: false,
             defer_network_configuration: false,
             automatic_endpoint_policy: None,
+            preset_endpoint_policy: None,
             profile_id: Uuid::new_v4(),
             endpoint: SocketAddrV4::new(Ipv4Addr::new(162, 159, 198, 2), 443).into(),
             endpoint_candidates: vec![
@@ -1103,6 +1127,69 @@ mod tests {
             store.load_or_clean(),
             Err(JournalError::Schema { found: 3, .. })
         ));
+    }
+
+    #[test]
+    fn schema_five_replacement_plans_cannot_claim_new_preset_policy() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = JournalStore::new(directory.path().join("recovery.json"));
+        let source_operation_id = Uuid::new_v4();
+        let mut legacy = RecoveryJournal::clean(42);
+        legacy.schema_version = 5;
+        legacy.replacement = Some(TunnelReplacement {
+            original_source_operation_id: source_operation_id,
+            original_source_plan: plan(),
+            source_operation_id,
+            cleanup_operation_id: source_operation_id,
+            source_journal_generation: 41,
+            operation_id: Uuid::new_v4(),
+            owner_sid: "S-1-5-21-1000".into(),
+            owner_process_id: 42,
+            guard_plan: ReplacementGuardPlan {
+                exclusions: Vec::new(),
+                target: plan(),
+            },
+            guard: MutationRecord {
+                kind: MutationKind::KillSwitch,
+                state: MutationState::Restored,
+                receipt: MutationReceipt::KillSwitch {
+                    provider_key: REPLACEMENT_WFP_PROVIDER_KEY,
+                    sublayer_key: REPLACEMENT_WFP_SUBLAYER_KEY,
+                    filter_keys: vec![Uuid::from_u128(REPLACEMENT_FILTER_KEY_BASE)],
+                    filter_ids: Vec::new(),
+                },
+            },
+            phase: ReplacementPhase::Complete,
+            abort_generation: None,
+        });
+        fs::write(store.path(), serde_json::to_vec(&legacy).unwrap()).unwrap();
+        let migrated = store.load_or_clean().unwrap();
+        assert_eq!(migrated.schema_version, JOURNAL_SCHEMA_VERSION);
+        assert_eq!(migrated.replacement, legacy.replacement);
+        for original in [true, false] {
+            let mut with_preset = legacy.clone();
+            let replacement = with_preset.replacement.as_mut().unwrap();
+            let nested = if original {
+                &mut replacement.original_source_plan
+            } else {
+                &mut replacement.guard_plan.target
+            };
+            nested.preset_endpoint_policy = Some(crate::plan::PresetEndpointPolicy {
+                hostname: "us.v6.free.orangesky.dev".into(),
+                port: 443,
+                ipv4_fallback: None,
+                tcp: true,
+                udp: true,
+            });
+            let mut current = with_preset.clone();
+            current.schema_version = JOURNAL_SCHEMA_VERSION;
+            current.validate().unwrap();
+            fs::write(store.path(), serde_json::to_vec(&with_preset).unwrap()).unwrap();
+            assert!(matches!(
+                store.load_or_clean(),
+                Err(JournalError::Schema { found: 5, .. })
+            ));
+        }
     }
 
     #[test]

@@ -1162,6 +1162,12 @@ fn ensure_endpoint_pool_unchanged(
     {
         return Err(TransportError::EndpointAssignmentChanged);
     }
+    if profile.endpoint.preset_region.is_some()
+        && (current.provider != refreshed.provider
+            || current.endpoint_preset_tier()? != refreshed.endpoint_preset_tier()?)
+    {
+        return Err(TransportError::EndpointAssignmentChanged);
+    }
     Ok(())
 }
 
@@ -1186,6 +1192,9 @@ async fn connect_with_policy(
 ) -> Result<(MasqueTunnel, AddressFamily), TransportError> {
     if profile.data_plane != usque_core::DataPlaneMode::ConnectIp {
         return Err(TransportError::UnsupportedOperatingMode);
+    }
+    if profile.endpoint.preset_region.is_some() {
+        return connect_endpoint_preset(profile, identity, protector, telemetry).await;
     }
     match profile.transport {
         TransportPolicy::Http3 => {
@@ -1249,6 +1258,14 @@ async fn connect_happy_eyeballs(
     protector: Arc<dyn SocketProtector>,
     telemetry: &ConnectionTelemetry,
 ) -> Result<(MasqueTunnel, AddressFamily), TransportError> {
+    if profile.endpoint.preset_region.is_some() {
+        let mut probe_profile = profile.clone();
+        probe_profile.transport = match transport {
+            Transport::Http3 => TransportPolicy::Http3,
+            Transport::Http2 => TransportPolicy::Http2,
+        };
+        return connect_endpoint_preset(&probe_profile, identity, protector, telemetry).await;
+    }
     if profile.endpoint.selection == usque_core::EndpointSelection::Automatic {
         return connect_automatic_endpoints(profile, identity, transport, protector, telemetry)
             .await;
@@ -1350,6 +1367,119 @@ async fn connect_happy_eyeballs(
     }
 }
 
+async fn connect_endpoint_preset(
+    profile: &Profile,
+    identity: &MasqueTlsIdentity,
+    protector: Arc<dyn SocketProtector>,
+    telemetry: &ConnectionTelemetry,
+) -> Result<(MasqueTunnel, AddressFamily), TransportError> {
+    crate::endpoint_preset::connect(
+        profile,
+        identity,
+        &protector,
+        telemetry,
+        |candidates, generation| {
+            let protector = protector.clone();
+            async move {
+                connect_preset_candidate_set(
+                    profile,
+                    identity,
+                    &candidates,
+                    generation,
+                    protector,
+                    telemetry,
+                )
+                .await
+            }
+        },
+    )
+    .await
+}
+
+async fn connect_preset_candidate_set(
+    profile: &Profile,
+    identity: &MasqueTlsIdentity,
+    candidates: &[std::net::SocketAddr],
+    generation: u64,
+    protector: Arc<dyn SocketProtector>,
+    telemetry: &ConnectionTelemetry,
+) -> Result<(MasqueTunnel, AddressFamily), TransportError> {
+    let mut last_error =
+        TransportError::AllEndpointsFailed("endpoint preset cycle exhausted".into());
+    for &transport in crate::endpoint_preset::protocols(profile.transport) {
+        let connect = {
+            let profile = profile.clone();
+            let identity = identity.clone();
+            let protector = crate::endpoint_preset::for_generation(protector.clone(), generation);
+            let telemetry = telemetry.clone();
+            move |endpoint: std::net::SocketAddr, cancellation: CancellationToken| {
+                let profile = profile.clone();
+                let identity = identity.clone();
+                let protector = protector.clone();
+                let telemetry = telemetry.clone();
+                async move {
+                    let family = if endpoint.is_ipv6() {
+                        AddressFamily::Ipv6
+                    } else {
+                        AddressFamily::Ipv4
+                    };
+                    connect_endpoint_cancellable(
+                        transport,
+                        EndpointCandidate::new(endpoint, family),
+                        &profile.endpoint.sni,
+                        &identity,
+                        usize::from(profile.mtu),
+                        profile.congestion_control,
+                        protector,
+                        &telemetry,
+                        cancellation,
+                        Some(generation),
+                    )
+                    .await
+                    .map(|tunnel| (tunnel, family))
+                }
+            }
+        };
+        for batch in candidates.chunks(crate::endpoint_preset::BATCH_SIZE) {
+            if protector.network_generation().unwrap_or_default() != generation {
+                return Err(TransportError::UnderlyingNetworkChanged);
+            }
+            let targets = batch
+                .iter()
+                .copied()
+                .filter(|endpoint| protector.endpoint_family_available(*endpoint) != Some(false))
+                .map(|endpoint| crate::endpoint_race::RaceTarget {
+                    endpoint,
+                    delay: Duration::ZERO,
+                })
+                .collect();
+            let deadline = (transport == Transport::Http2)
+                .then_some(usque_core::endpoints::AUTOMATIC_H2_BATCH_TIMEOUT);
+            let result = crate::endpoint_race::race_batch(targets, deadline, connect.clone()).await;
+            if protector.network_generation().unwrap_or_default() != generation {
+                if let Ok((tunnel, _)) = result {
+                    crate::endpoint_race::RaceConnection::shutdown(tunnel).await;
+                }
+                return Err(TransportError::UnderlyingNetworkChanged);
+            }
+            match result {
+                Ok(connected) => return Ok(connected),
+                Err(error)
+                    if RecoveryDecision::for_failure(&error.failure(Some(transport), None))
+                        != RecoveryDecision::Retry =>
+                {
+                    return Err(error);
+                }
+                Err(error) => last_error = error,
+            }
+        }
+        if !last_error.failure(Some(transport), None).fallback_allowed {
+            break;
+        }
+    }
+    Err(last_error)
+}
+
 async fn connect_automatic_endpoints(
     profile: &Profile,
     identity: &MasqueTlsIdentity,
@@ -1385,6 +1515,7 @@ async fn connect_automatic_endpoints(
                     protector,
                     &telemetry,
                     cancellation,
+                    None,
                 )
                 .await
                 .map(|tunnel| (tunnel, family))
@@ -1535,6 +1666,7 @@ async fn connect_endpoint(
         protector,
         telemetry,
         CancellationToken::new(),
+        None,
     )
     .await
 }
@@ -1553,6 +1685,7 @@ async fn connect_endpoint_cancellable(
     protector: Arc<dyn SocketProtector>,
     telemetry: &ConnectionTelemetry,
     cancellation: CancellationToken,
+    preset_generation: Option<u64>,
 ) -> Result<MasqueTunnel, TransportError> {
     let EndpointCandidate {
         socket: endpoint,
@@ -1561,6 +1694,11 @@ async fn connect_endpoint_cancellable(
     telemetry.record_attempt(transport, family);
     let started = Instant::now();
     for _ in 0..8 {
+        if preset_generation
+            .is_some_and(|expected| protector.network_generation().unwrap_or_default() != expected)
+        {
+            return Err(TransportError::UnderlyingNetworkChanged);
+        }
         let attempt = ConnectionAttemptTelemetry::new(telemetry.clone(), transport, family);
         attempt.record(
             ConnectionEventType::EndpointResolved,
@@ -1630,6 +1768,7 @@ async fn connect_endpoint_cancellable(
                 attempt_cancellation.cancel();
                 let _ = connecting.await;
                 if cancellation.is_cancelled() { return Err(TransportError::TunnelClosed); }
+                if preset_generation.is_some() { return Err(TransportError::UnderlyingNetworkChanged); }
                 telemetry.increment_network_change();
                 telemetry.record(
                     ConnectionEventType::NetworkChanged,
@@ -2432,6 +2571,9 @@ async fn pump_active_tunnel(
                 }
                 observed_generation = current;
                 record_migration_network_change(telemetry, active_path);
+                if profile.endpoint.preset_region.is_some() {
+                    break ActiveOutcome::Reconnect(network_change_failure(active_path));
+                }
                 let Some(target_generation) = current else {
                     break ActiveOutcome::Reconnect(network_change_failure(active_path));
                 };
@@ -3206,6 +3348,7 @@ mod tests {
             crate::socket::noop_socket_protector(),
             &telemetry,
             cancellation.clone(),
+            None,
         );
         let cancel_after_first_packet = async {
             let mut packet = [0; 2048];
@@ -3253,6 +3396,7 @@ mod tests {
             Arc::new(Denied(cancellation.clone())),
             &telemetry,
             cancellation,
+            None,
         )
         .await;
         assert!(matches!(result, Err(TransportError::SocketProtection(_))));

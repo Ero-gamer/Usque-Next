@@ -1814,6 +1814,160 @@ pub async fn resolve_physical_host(
     }
 }
 
+/// Resolves one built-in endpoint through physical DNS, issuing AAAA only.
+/// Each socket has a distinct bootstrap authorization and closes before its
+/// exact-generation lease, including timeout and cancellation paths.
+pub async fn resolve_endpoint_preset_aaaa<S: SocketProtector + ?Sized>(
+    protector: &S,
+    host: &str,
+    port: u16,
+    expected_generation: u64,
+) -> Result<Vec<SocketAddr>, String> {
+    if port == 0 || protector.network_generation().unwrap_or_default() != expected_generation {
+        return Err(crate::socket::STALE_GENERATION_REASON.to_owned());
+    }
+    let wire = build_host_query(host, 28, next_udp_port())?;
+    let query = parse_query(&wire)?;
+    let deadline = tokio::time::Instant::now() + DNS_TIMEOUT;
+    for server in protector.physical_dns_servers().into_iter().take(16) {
+        if server.port() == 0 || server.ip().is_unspecified() || server.ip().is_multicast() {
+            continue;
+        }
+        let response = timeout_at_preset(deadline, async {
+            let response = preset_dns_udp(protector, server, &wire, expected_generation).await?;
+            if response_is_truncated(&response) {
+                preset_dns_tcp(protector, server, &wire, expected_generation).await
+            } else {
+                Ok(response)
+            }
+        })
+        .await;
+        if protector.network_generation().unwrap_or_default() != expected_generation {
+            return Err(crate::socket::STALE_GENERATION_REASON.to_owned());
+        }
+        let response = match response {
+            Ok(response) => response,
+            Err(reason) if reason.starts_with("preset_dns_protection:") => return Err(reason),
+            Err(_) => continue,
+        };
+        if validate_resolver_response(&wire, &response).is_err() {
+            continue;
+        }
+        let addresses = response_hints(&response, &query)?
+            .into_iter()
+            .map(|(ip, _)| SocketAddr::new(ip, port))
+            .collect();
+        return Ok(crate::endpoint_preset::canonical_candidates(
+            addresses, port,
+        ));
+    }
+    Err("endpoint preset physical DNS lookup failed".to_owned())
+}
+
+async fn timeout_at_preset<T>(
+    deadline: tokio::time::Instant,
+    future: impl std::future::Future<Output = Result<T, String>>,
+) -> Result<T, String> {
+    tokio::time::timeout_at(deadline, future)
+        .await
+        .map_err(|_| "endpoint preset DNS timed out".to_owned())?
+}
+
+struct PresetDnsSocket<T> {
+    socket: T,
+    _lease: crate::socket::DirectEgressLease,
+}
+
+async fn preset_dns_udp<S: SocketProtector + ?Sized>(
+    protector: &S,
+    server: SocketAddr,
+    wire: &[u8],
+    generation: u64,
+) -> Result<Vec<u8>, String> {
+    let bind = if server.is_ipv4() {
+        "0.0.0.0:0"
+    } else {
+        "[::]:0"
+    };
+    let socket = StdUdpSocket::bind(bind).map_err(|error| error.to_string())?;
+    let lease = protector
+        .protect_endpoint_preset_dns_generation(
+            socket_handle(&socket),
+            server,
+            DirectProtocol::Udp,
+            generation,
+        )
+        .await
+        .map_err(|reason| format!("preset_dns_protection:{reason}"))?;
+    let protected = PresetDnsSocket {
+        socket,
+        _lease: lease,
+    };
+    protected
+        .socket
+        .set_nonblocking(true)
+        .map_err(|error| error.to_string())?;
+    let socket = PresetDnsSocket {
+        socket: UdpSocket::from_std(protected.socket).map_err(|error| error.to_string())?,
+        _lease: protected._lease,
+    };
+    socket
+        .socket
+        .connect(server)
+        .await
+        .map_err(|error| error.to_string())?;
+    if socket
+        .socket
+        .send(wire)
+        .await
+        .map_err(|error| error.to_string())?
+        != wire.len()
+    {
+        return Err("incomplete endpoint preset DNS datagram".into());
+    }
+    let mut response = vec![0; MAX_UDP_MESSAGE];
+    let size = socket
+        .socket
+        .recv(&mut response)
+        .await
+        .map_err(|error| error.to_string())?;
+    response.truncate(size);
+    Ok(response)
+}
+
+async fn preset_dns_tcp<S: SocketProtector + ?Sized>(
+    protector: &S,
+    server: SocketAddr,
+    wire: &[u8],
+    generation: u64,
+) -> Result<Vec<u8>, String> {
+    let socket = if server.is_ipv4() {
+        TcpSocket::new_v4()
+    } else {
+        TcpSocket::new_v6()
+    }
+    .map_err(|error| error.to_string())?;
+    let lease = protector
+        .protect_endpoint_preset_dns_generation(
+            socket_handle(&socket),
+            server,
+            DirectProtocol::Tcp,
+            generation,
+        )
+        .await
+        .map_err(|reason| format!("preset_dns_protection:{reason}"))?;
+    let socket = PresetDnsSocket {
+        socket,
+        _lease: lease,
+    };
+    let stream = socket
+        .socket
+        .connect(server)
+        .await
+        .map_err(|error| error.to_string())?;
+    exchange_tcp(crate::socket::LeasedIo::new(stream, socket._lease), wire).await
+}
+
 fn build_host_query(host: &str, query_type: u16, id: u16) -> Result<Vec<u8>, String> {
     let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
     if host.is_empty() || host.len() > 253 || !matches!(query_type, 1 | 28) {
@@ -3154,5 +3308,105 @@ pub(crate) mod tests {
             .unwrap_err();
         assert!(error.contains("physical network changed"));
         server_task.await.unwrap();
+    }
+
+    struct PresetDnsProtector {
+        server: SocketAddr,
+        active: Arc<std::sync::atomic::AtomicUsize>,
+    }
+    struct PresetDnsLease(Arc<std::sync::atomic::AtomicUsize>);
+    impl Drop for PresetDnsLease {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+    #[async_trait::async_trait]
+    impl SocketProtector for PresetDnsProtector {
+        fn protect(&self, _: crate::socket::SocketHandle) -> Result<(), String> {
+            panic!("preset DNS must use its distinct exact-generation lease")
+        }
+        fn physical_dns_servers(&self) -> Vec<SocketAddr> {
+            vec![self.server]
+        }
+        fn network_generation(&self) -> Option<u64> {
+            Some(7)
+        }
+        async fn protect_endpoint_preset_dns_generation(
+            &self,
+            _: crate::socket::SocketHandle,
+            remote: SocketAddr,
+            protocol: DirectProtocol,
+            generation: u64,
+        ) -> Result<crate::socket::DirectEgressLease, String> {
+            assert_eq!(remote, self.server);
+            assert_eq!(protocol, DirectProtocol::Udp);
+            assert_eq!(generation, 7);
+            self.active.fetch_add(1, Ordering::SeqCst);
+            Ok(crate::socket::DirectEgressLease::hold_for_generation(
+                PresetDnsLease(self.active.clone()),
+                generation,
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn preset_dns_queries_aaaa_only_with_separate_bootstrap_lease() {
+        let server = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let protector = PresetDnsProtector {
+            server: server.local_addr().unwrap(),
+            active: active.clone(),
+        };
+        let task = tokio::spawn(async move {
+            let mut wire = [0; 4096];
+            let (size, peer) = server.recv_from(&mut wire).await.unwrap();
+            let request = &wire[..size];
+            let query = parse_query(request).unwrap();
+            assert_eq!(query.questions.len(), 1);
+            assert_eq!(query.questions[0].query_type, 28);
+            let mut response = error_response(request, 0);
+            response[6..8].copy_from_slice(&2_u16.to_be_bytes());
+            for _ in 0..2 {
+                response.extend([0xc0, 12, 0, 28, 0, 1, 0, 0, 0, 60, 0, 16]);
+                response.extend("2001:db8::8".parse::<Ipv6Addr>().unwrap().octets());
+            }
+            server.send_to(&response, peer).await.unwrap();
+        });
+        let addresses =
+            resolve_endpoint_preset_aaaa(&protector, "us.v6.free.orangesky.dev", 443, 7)
+                .await
+                .unwrap();
+        assert_eq!(
+            addresses,
+            ["[2001:db8::8]:443".parse::<SocketAddr>().unwrap()]
+        );
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+        task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn cancelled_preset_dns_drops_socket_and_bootstrap_lease() {
+        let server = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let protector = PresetDnsProtector {
+            server: server.local_addr().unwrap(),
+            active: active.clone(),
+        };
+        let mut resolving = Box::pin(resolve_endpoint_preset_aaaa(
+            &protector,
+            "us.v6.free.orangesky.dev",
+            443,
+            7,
+        ));
+        tokio::select! {
+            result = &mut resolving => panic!("fixture DNS must remain pending: {result:?}"),
+            _ = async {
+                let mut wire = [0; 512];
+                server.recv_from(&mut wire).await.unwrap();
+            } => {},
+        }
+        assert_eq!(active.load(Ordering::SeqCst), 1);
+        drop(resolving);
+        assert_eq!(active.load(Ordering::SeqCst), 0);
     }
 }

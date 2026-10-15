@@ -11,6 +11,13 @@ import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicInteger
 
 class NetworkQualityFieldsTest {
+    @Test fun endpointPresetCapabilityRequiresExplicitBoolean() {
+        assertTrue(NetworkQualityFields.capabilities("{\"endpoint_presets\":true}").getValue("endpoint_presets"))
+        for (source in listOf(null, "{}", "{\"endpoint_presets\":\"true\"}")) {
+            assertFalse(NetworkQualityFields.capabilities(source).getValue("endpoint_presets"))
+        }
+    }
+
     @Test fun zeroTrustEndpointEditingRequiresExplicitBooleanSupport() {
         val key = "zero_trust_endpoint_editing"
         assertEquals(true, NetworkQualityFields.capabilities("{\"zero_trust_endpoint_editing\":true}").getValue(key))

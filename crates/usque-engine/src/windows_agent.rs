@@ -122,6 +122,7 @@ struct WindowsVpnSocketProtector {
     monitor_cancel: CancellationToken,
     proxy_mode: AtomicBool,
     automatic_endpoints: bool,
+    preset_hostname: Option<String>,
 }
 
 struct WindowsPhysicalState {
@@ -175,8 +176,14 @@ impl SocketProtector for WindowsVpnSocketProtector {
         let generation = self
             .network_generation()
             .ok_or_else(|| STALE_GENERATION_REASON.to_owned())?;
-        self.protect_target_generation(socket, remote, protocol, generation, false)
-            .await
+        self.protect_target_generation(
+            socket,
+            remote,
+            protocol,
+            generation,
+            agent_v1::DirectEgressPurpose::Unspecified,
+        )
+        .await
     }
 
     async fn protect_for_target_generation(
@@ -186,8 +193,14 @@ impl SocketProtector for WindowsVpnSocketProtector {
         protocol: DirectProtocol,
         expected_generation: u64,
     ) -> Result<DirectEgressLease, String> {
-        self.protect_target_generation(socket, remote, protocol, expected_generation, false)
-            .await
+        self.protect_target_generation(
+            socket,
+            remote,
+            protocol,
+            expected_generation,
+            agent_v1::DirectEgressPurpose::Unspecified,
+        )
+        .await
     }
 
     async fn protect_masque_endpoint_generation(
@@ -202,13 +215,90 @@ impl SocketProtector for WindowsVpnSocketProtector {
             remote,
             protocol,
             expected_generation,
-            self.automatic_endpoints,
+            if self.preset_hostname.is_some() {
+                agent_v1::DirectEgressPurpose::PresetMasque
+            } else if self.automatic_endpoints {
+                agent_v1::DirectEgressPurpose::AutomaticMasque
+            } else {
+                agent_v1::DirectEgressPurpose::Unspecified
+            },
         )
         .await
     }
 
     fn tun_direct_available(&self) -> bool {
         !self.proxy_mode.load(Ordering::Acquire)
+    }
+
+    async fn protect_endpoint_preset_dns_generation(
+        &self,
+        socket: SocketHandle,
+        remote: SocketAddr,
+        protocol: DirectProtocol,
+        expected_generation: u64,
+    ) -> Result<DirectEgressLease, String> {
+        if self.proxy_mode.load(Ordering::Acquire) {
+            return NoopSocketProtector
+                .protect_endpoint_preset_dns_generation(
+                    socket,
+                    remote,
+                    protocol,
+                    expected_generation,
+                )
+                .await;
+        }
+        if self.preset_hostname.is_none() || remote.port() != 53 {
+            return Err("preset DNS policy is unavailable".to_owned());
+        }
+        self.protect_target_generation(
+            socket,
+            remote,
+            protocol,
+            expected_generation,
+            agent_v1::DirectEgressPurpose::PresetDns,
+        )
+        .await
+    }
+
+    async fn authorize_endpoint_preset_candidates(
+        &self,
+        host: &str,
+        candidates: &[SocketAddr],
+        expected_generation: u64,
+    ) -> Result<(), String> {
+        if self.proxy_mode.load(Ordering::Acquire) {
+            return NoopSocketProtector
+                .authorize_endpoint_preset_candidates(host, candidates, expected_generation)
+                .await;
+        }
+        if self.preset_hostname.as_deref() != Some(host) {
+            return Err("preset hostname does not match the active policy".to_owned());
+        }
+        let generation = self
+            .egress_generation(expected_generation)?
+            .ok_or_else(|| STALE_GENERATION_REASON.to_owned())?;
+        self.agent
+            .set_preset_endpoint_candidates(self.operation_id, host, candidates, generation)
+            .await
+            .map_err(|error| self.socket_setup_error("AUTHORIZE_PRESET_ENDPOINTS", error))?;
+        self.verify_generation(expected_generation, generation)
+    }
+
+    async fn resolve_endpoint_preset(
+        &self,
+        host: &str,
+        port: u16,
+        expected_generation: u64,
+    ) -> Result<Vec<SocketAddr>, String> {
+        if self.proxy_mode.load(Ordering::Acquire) {
+            return NoopSocketProtector
+                .resolve_endpoint_preset(host, port, expected_generation)
+                .await;
+        }
+        if self.preset_hostname.as_deref() != Some(host) {
+            return Err("preset hostname does not match the active policy".to_owned());
+        }
+        usque_transport::resolve_endpoint_preset_aaaa(self, host, port, expected_generation).await
     }
 
     fn network_generation(&self) -> Option<u64> {
@@ -304,7 +394,7 @@ impl WindowsVpnSocketProtector {
         remote: SocketAddr,
         protocol: DirectProtocol,
         expected_generation: u64,
-        automatic_masque: bool,
+        purpose: agent_v1::DirectEgressPurpose,
     ) -> Result<DirectEgressLease, String> {
         let Some(agent_generation) = self.egress_generation(expected_generation)? else {
             return NoopSocketProtector
@@ -318,7 +408,7 @@ impl WindowsVpnSocketProtector {
                 remote,
                 protocol,
                 agent_generation,
-                automatic_masque,
+                purpose,
             )
             .await
             .map_err(|error| self.socket_setup_error("ACQUIRE_DIRECT_EGRESS", error))?;
@@ -1092,6 +1182,9 @@ impl WindowsVpnRuntime {
         device: &WindowsDeviceOwner,
     ) -> Result<Self, WindowsVpnError> {
         let startup_cancel = gate.cancellation.clone();
+        if profile.endpoint.preset_region.is_some() {
+            identity.endpoint_preset_tier()?;
+        }
         let geo_enabled = true; // Keep DNS filtering ready for live Ads toggles.
         let agent = WindowsAgentClient::production();
         let capabilities = agent.get_capabilities().await?;
@@ -1810,7 +1903,7 @@ impl WindowsVpnRuntime {
             Err(error) => return Err((tunnel, error)),
         };
         let operation_id = Uuid::new_v4();
-        let plan = attached_tunnel_plan(
+        let mut plan = attached_tunnel_plan(
             profile,
             &tunnel.network_parameters(),
             (tunnel.assigned_ipv4(), tunnel.assigned_ipv6()),
@@ -1818,6 +1911,12 @@ impl WindowsVpnRuntime {
             tunnel.endpoint_pool(),
             tunnel.supports_live_ads(),
         );
+        if let Some(region) = profile.endpoint.preset_region {
+            let Some(tier) = tunnel.endpoint_preset_tier() else {
+                return Err((tunnel, TransportError::InvalidIdentity.into()));
+            };
+            plan.preset_endpoint_policy = Some(preset_policy(profile, region.hostname(tier)));
+        }
         let startup_lease = match agent
             .prepare(operation_id, plan, &device_lease, state.journal_generation)
             .await
@@ -2104,6 +2203,11 @@ async fn prepare_vpn_protector(
         .plan
         .as_ref()
         .is_some_and(|plan| plan.automatic_endpoint_policy.is_some());
+    let preset_hostname = state
+        .plan
+        .as_ref()
+        .and_then(|plan| plan.preset_endpoint_policy.as_ref())
+        .map(|policy| policy.hostname.clone());
     let physical_info = agent.get_physical_network_info(operation_id).await?;
     let dns_servers = physical_dns_endpoints(&physical_info)?;
     validate_physical_dns(profile, &dns_servers)?;
@@ -2124,6 +2228,7 @@ async fn prepare_vpn_protector(
         monitor_cancel: CancellationToken::new(),
         proxy_mode: AtomicBool::new(false),
         automatic_endpoints,
+        preset_hostname,
         physical_watch: tokio::sync::watch::channel(PhysicalNetworkSnapshot::default()).0,
     });
     protector.observe_physical_snapshot(&physical_info);
@@ -2477,6 +2582,16 @@ fn tunnel_plan(
             usque_core::AutomaticEndpointPolicy::for_profile(profile, identity.endpoint_pool()),
         );
     }
+    if let Some(region) = profile.endpoint.preset_region {
+        plan.preset_endpoint_policy = Some(preset_policy(
+            profile,
+            identity
+                .endpoint_preset_tier()
+                .ok()
+                .map(|tier| region.hostname(tier))
+                .unwrap_or_default(),
+        ));
+    }
     plan
 }
 
@@ -2500,7 +2615,7 @@ fn tunnel_plan_from_assignment(
                 usque_core::EndpointPool::WarpPlus,
             )
         });
-    let (ipv4, ipv6) = automatic_policy.map_or_else(
+    let (mut ipv4, mut ipv6) = automatic_policy.map_or_else(
         || {
             (
                 profile.endpoint.ipv4_socket(),
@@ -2509,6 +2624,16 @@ fn tunnel_plan_from_assignment(
         },
         |policy| automatic_observation_pair(profile, policy),
     );
+    if profile.endpoint.preset_region.is_some() {
+        ipv4 = SocketAddr::new(
+            usque_core::config::DEFAULT_ENDPOINT_V4.into(),
+            profile.endpoint.port,
+        );
+        ipv6 = SocketAddr::new(
+            usque_core::config::DEFAULT_ENDPOINT_V6.into(),
+            profile.endpoint.port,
+        );
+    }
     let mut endpoint = match profile.ip_policy {
         IpPolicy::PreferIpv6 | IpPolicy::Ipv6Only => ipv6,
         IpPolicy::Auto | IpPolicy::PreferIpv4 | IpPolicy::Ipv4Only => ipv4,
@@ -2520,6 +2645,11 @@ fn tunnel_plan_from_assignment(
             vec![ipv4.to_string(), ipv6.to_string()]
         }
     };
+    if profile.endpoint.preset_region.is_some() {
+        // Canonical anchors observe physical interfaces only. Preset
+        // sockets require explicit, generation-scoped DNS/candidate leases.
+        endpoint_candidates = vec![ipv4.to_string(), ipv6.to_string()];
+    }
     if automatic_policy.is_some() {
         endpoint_candidates.retain(|candidate| {
             candidate.parse::<SocketAddr>().is_ok_and(|value| {
@@ -2572,6 +2702,7 @@ fn tunnel_plan_from_assignment(
         vpn_chain: profile.chain_enabled(),
         defer_network_configuration: false,
         automatic_endpoint_policy: automatic_policy.map(automatic_policy_to_proto),
+        preset_endpoint_policy: None,
     }
 }
 
@@ -2666,10 +2797,31 @@ fn automatic_policy_to_proto(
     }
 }
 
+fn preset_policy(profile: &Profile, hostname: &str) -> agent_v1::PresetEndpointPolicy {
+    agent_v1::PresetEndpointPolicy {
+        hostname: hostname.to_owned(),
+        port: u32::from(profile.endpoint.port),
+        ipv4_fallback: if profile.ip_policy == IpPolicy::PreferIpv6 {
+            profile.endpoint.ipv4_socket().to_string()
+        } else {
+            String::new()
+        },
+        tcp: profile.data_plane == usque_core::DataPlaneMode::ConnectIp
+            && profile.transport != usque_core::TransportPolicy::Http3,
+        udp: profile.data_plane == usque_core::DataPlaneMode::L4Proxy
+            || profile.transport != usque_core::TransportPolicy::Http2,
+    }
+}
+
 fn validate_automatic_endpoint_capability(
     capabilities: &AgentCapabilities,
     profile: &Profile,
 ) -> Result<(), WindowsVpnError> {
+    if profile.endpoint.preset_region.is_some() && !capabilities.endpoint_preset_leases {
+        return Err(WindowsVpnError::MissingCapabilities(
+            "endpoint_preset_leases".into(),
+        ));
+    }
     if profile.endpoint.selection == usque_core::EndpointSelection::Automatic
         && !capabilities.automatic_endpoint_leases
     {
@@ -3535,7 +3687,7 @@ impl WindowsAgentClient {
         remote: SocketAddr,
         protocol: DirectProtocol,
         expected_generation: u64,
-        automatic_masque: bool,
+        purpose: agent_v1::DirectEgressPurpose,
     ) -> Result<(NamedPipeClient, AgentDirectEgressLease), WindowsVpnError> {
         let mut pipe = self.open_pipe().await?;
         let response = timeout(
@@ -3547,11 +3699,7 @@ impl WindowsAgentClient {
                     remote_endpoint: remote.to_string(),
                     protocol: u32::from(protocol.iana_number()),
                     expected_generation,
-                    purpose: if automatic_masque {
-                        agent_v1::DirectEgressPurpose::AutomaticMasque as i32
-                    } else {
-                        0
-                    },
+                    purpose: purpose as i32,
                 }),
             ),
         )
@@ -3571,6 +3719,29 @@ impl WindowsAgentClient {
             agent_response::Payload::DirectEgressLease(_) => {
                 Err(WindowsVpnError::InvalidDirectEgressLease)
             }
+            payload => Err(WindowsVpnError::UnexpectedResponse(payload_name(&payload))),
+        }
+    }
+
+    async fn set_preset_endpoint_candidates(
+        &self,
+        operation_id: Uuid,
+        hostname: &str,
+        candidates: &[SocketAddr],
+        expected_generation: u64,
+    ) -> Result<(), WindowsVpnError> {
+        let response = self
+            .call(agent_request::Payload::SetPresetEndpointCandidates(
+                agent_v1::SetPresetEndpointCandidatesRequest {
+                    operation_id: operation_id.to_string(),
+                    hostname: hostname.to_owned(),
+                    ipv6_candidates: candidates.iter().map(ToString::to_string).collect(),
+                    expected_generation,
+                },
+            ))
+            .await?;
+        match response {
+            agent_response::Payload::Empty(_) => Ok(()),
             payload => Err(WindowsVpnError::UnexpectedResponse(payload_name(&payload))),
         }
     }
@@ -6267,6 +6438,7 @@ mod tests {
             monitor_cancel: cancellation.clone(),
             proxy_mode: AtomicBool::new(false),
             automatic_endpoints: false,
+            preset_hostname: None,
             physical_watch: tokio::sync::watch::channel(PhysicalNetworkSnapshot::default()).0,
         };
         let mut observations = protector.subscribe_physical_network().unwrap();
@@ -6329,8 +6501,8 @@ mod tests {
         assert!(cancellation.is_cancelled());
     }
 
-    #[test]
-    fn proxy_detach_requires_clean_closed_transaction_and_invalidates_old_generations() {
+    #[tokio::test]
+    async fn proxy_detach_requires_clean_closed_transaction_and_invalidates_old_generations() {
         let protector = WindowsVpnSocketProtector {
             registration_api: Vec::new(),
             agent: WindowsAgentClient::production(),
@@ -6344,6 +6516,7 @@ mod tests {
             monitor_cancel: CancellationToken::new(),
             proxy_mode: AtomicBool::new(false),
             automatic_endpoints: false,
+            preset_hostname: None,
             physical_watch: tokio::sync::watch::channel(PhysicalNetworkSnapshot::default()).0,
         };
         let mut state = AgentState {
@@ -6381,6 +6554,25 @@ mod tests {
         assert_eq!(protector.egress_generation(0), Ok(None));
         assert!(protector.egress_generation(7).is_err());
         assert!(protector.verify_generation(0, 3).is_err());
+        assert!(
+            protector
+                .authorize_endpoint_preset_candidates("us.v6.free.orangesky.dev", &[], 0)
+                .await
+                .is_ok()
+        );
+        assert!(
+            protector
+                .authorize_endpoint_preset_candidates("us.v6.free.orangesky.dev", &[], 7)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            protector
+                .resolve_endpoint_preset("2001:db8::42", 443, 0)
+                .await
+                .unwrap(),
+            ["[2001:db8::42]:443".parse::<SocketAddr>().unwrap()]
+        );
     }
 
     #[test]
@@ -6399,6 +6591,7 @@ mod tests {
             reusable_tun_device: true,
             automatic_endpoint_leases: true,
             protected_tunnel_replacement: false,
+            endpoint_preset_leases: false,
             protocol_version: AGENT_PROTOCOL_VERSION,
             wintun: true,
             interface_addresses: true,
@@ -6667,6 +6860,55 @@ mod tests {
             "2606:4700:110::2".parse::<Ipv6Addr>().expect("IPv6"),
         )
         .expect("identity")
+    }
+
+    #[test]
+    fn preset_plans_use_canonical_observation_anchors_and_authenticated_hosts() {
+        let mut profile = Profile {
+            endpoint: usque_core::EndpointSettings {
+                selection: usque_core::EndpointSelection::Custom,
+                preset_region: Some(usque_core::EndpointPresetRegion::De),
+                ipv4: "192.0.2.42".parse().unwrap(),
+                ipv6: "::1".parse().unwrap(),
+                ..Default::default()
+            },
+            ip_policy: IpPolicy::PreferIpv6,
+            ..Default::default()
+        };
+        let identity = identity().with_identity_metadata(usque_core::IdentityMetadata {
+            provider: usque_core::IdentityProvider::Consumer,
+            entitlement: Some(usque_core::ConsumerEntitlement::WarpPlus),
+        });
+        let wire = tunnel_plan(&profile, &identity, &[], true);
+        assert_eq!(
+            wire.endpoint_candidates,
+            ["162.159.198.2:443", "[2606:4700:103::2]:443"]
+        );
+        let policy = wire.preset_endpoint_policy.unwrap();
+        assert_eq!(policy.hostname, "de.v6.plus.orangesky.dev");
+        assert_eq!(policy.ipv4_fallback, "192.0.2.42:443");
+        profile.ip_policy = IpPolicy::Ipv6Only;
+        assert!(
+            tunnel_plan(&profile, &identity, &[], true)
+                .preset_endpoint_policy
+                .unwrap()
+                .ipv4_fallback
+                .is_empty()
+        );
+        assert!(
+            validate_automatic_endpoint_capability(&AgentCapabilities::default(), &profile)
+                .is_err()
+        );
+        assert!(
+            validate_automatic_endpoint_capability(
+                &AgentCapabilities {
+                    endpoint_preset_leases: true,
+                    ..Default::default()
+                },
+                &profile
+            )
+            .is_ok()
+        );
     }
 
     #[test]

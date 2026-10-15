@@ -58,6 +58,32 @@ pub enum AddressFamily {
     Ipv6,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum EndpointSource {
+    PresetIpv6,
+    ManualIpv4Fallback,
+}
+
+impl EndpointSource {
+    pub const fn for_profile(profile: &crate::Profile, family: AddressFamily) -> Option<Self> {
+        if profile.endpoint.preset_region.is_none() {
+            return None;
+        }
+        Some(match family {
+            AddressFamily::Ipv6 => Self::PresetIpv6,
+            AddressFamily::Ipv4 => Self::ManualIpv4Fallback,
+        })
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::PresetIpv6 => "preset_ipv6",
+            Self::ManualIpv4Fallback => "manual_ipv4_fallback",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct Statistics {
     pub connected_seconds: u64,
@@ -80,6 +106,8 @@ pub struct ConnectionSnapshot {
     pub changed_at: DateTime<Utc>,
     pub transport: Option<Transport>,
     pub address_family: Option<AddressFamily>,
+    #[serde(default)]
+    pub endpoint_source: Option<EndpointSource>,
     pub ipv4_available: bool,
     pub ipv6_available: bool,
     pub statistics: Statistics,
@@ -108,6 +136,7 @@ impl Default for ConnectionSnapshot {
             changed_at: Utc::now(),
             transport: None,
             address_family: None,
+            endpoint_source: None,
             ipv4_available: false,
             ipv6_available: false,
             statistics: Statistics::default(),
@@ -213,6 +242,7 @@ impl StateMachine {
             self.snapshot.session_congestion_control = None;
             self.snapshot.transport = None;
             self.snapshot.address_family = None;
+            self.snapshot.endpoint_source = None;
             self.snapshot.ipv4_available = false;
             self.snapshot.ipv6_available = false;
             self.snapshot.exit = None;
@@ -281,6 +311,10 @@ impl StateMachine {
 
     pub fn set_exit_info(&mut self, exit: ExitInfo) {
         self.snapshot.exit = Some(exit);
+    }
+
+    pub fn update_endpoint_source(&mut self, source: Option<EndpointSource>) {
+        self.snapshot.endpoint_source = source;
     }
 
     pub fn clear_exit_info(&mut self) {
@@ -419,6 +453,28 @@ pub struct TransitionError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_source_uses_the_active_profile_and_resets_on_disconnect() {
+        let mut profile = crate::Profile::default();
+        assert_eq!(
+            EndpointSource::for_profile(&profile, AddressFamily::Ipv4),
+            None
+        );
+        profile.endpoint.preset_region = Some(crate::EndpointPresetRegion::Us);
+        assert_eq!(
+            EndpointSource::for_profile(&profile, AddressFamily::Ipv6),
+            Some(EndpointSource::PresetIpv6)
+        );
+        assert_eq!(
+            EndpointSource::for_profile(&profile, AddressFamily::Ipv4),
+            Some(EndpointSource::ManualIpv4Fallback)
+        );
+        let mut state = StateMachine::default();
+        state.update_endpoint_source(Some(EndpointSource::ManualIpv4Fallback));
+        state.transition(ConnectionPhase::Disconnected).unwrap();
+        assert_eq!(state.snapshot().endpoint_source, None);
+    }
 
     #[test]
     fn happy_path_and_disconnect_are_valid() {

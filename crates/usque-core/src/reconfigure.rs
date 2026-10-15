@@ -82,7 +82,8 @@ pub fn classify_reconfigure(previous: &Profile, next: &Profile) -> ReconfigureCl
         // A proxy runtime's no-op protector cannot supply those on hot attach.
         || !previous.frontends.tunnel
             && next.frontends.tunnel
-            && next.endpoint.selection == crate::EndpointSelection::Automatic
+            && (next.endpoint.selection == crate::EndpointSelection::Automatic
+                || next.endpoint.preset_region.is_some())
         || previous.frontends.tunnel != next.frontends.tunnel
             && (previous.needs_domain_routing()
                 || next.needs_domain_routing()
@@ -382,6 +383,14 @@ mod tests {
                 assert_eq!(
                     classify_reconfigure(&proxy, &vpn),
                     ReconfigureClass::HotTunnelAttach
+                );
+                proxy.endpoint.preset_region = Some(crate::EndpointPresetRegion::Us);
+                vpn.endpoint.preset_region = Some(crate::EndpointPresetRegion::Us);
+                proxy.ip_policy = crate::IpPolicy::Ipv6Only;
+                vpn.ip_policy = crate::IpPolicy::Ipv6Only;
+                assert_eq!(
+                    classify_reconfigure(&proxy, &vpn),
+                    ReconfigureClass::ColdReconnect
                 );
             }
         }

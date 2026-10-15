@@ -25,6 +25,7 @@ internal class ServiceSnapshotState {
     var networkQualityJson: String? = null
     var sessionCongestionControl: String? = null
     var adsRuleRevision: String? = null
+    var endpointSource: String? = null
     var dataPlane: String? = null
     var l4Json: String? = null
     var vpnGateJson: String? = null
@@ -119,6 +120,7 @@ internal class ServiceSnapshotState {
         val networkQualityJson: String? = null,
         val sessionCongestionControl: String? = null,
         val adsRuleRevision: String? = null,
+        val endpointSource: String? = null,
         val dataPlane: String? = null,
         val l4Json: String? = null,
         val vpnGateJson: String? = null,
@@ -176,6 +178,7 @@ internal class ServiceSnapshotState {
         const val NETWORK_QUALITY = "network_quality_json"
         const val SESSION_CONGESTION_CONTROL = "session_congestion_control"
         const val ADS_RULE_REVISION = "ads_rule_revision"
+        const val ENDPOINT_SOURCE = "endpoint_source"
         const val DATA_PLANE = "data_plane"
         const val L4 = "l4_json"
         const val VPN_GATE = "vpn_gate_json"
@@ -205,6 +208,7 @@ internal class ServiceSnapshotState {
         networkQualityJson = null
         sessionCongestionControl = null
         adsRuleRevision = null
+        endpointSource = null
         dataPlane = null
         l4Json = null
         vpnGateJson = null
@@ -346,6 +350,7 @@ internal class ServiceSnapshotState {
         val networkQualityJson: String? = null,
         val sessionCongestionControl: String? = null,
         val adsRuleRevision: String? = null,
+        val endpointSource: String? = null,
         val dataPlane: String? = null,
         val l4Json: String? = null,
         val vpnGateJson: String? = null,
@@ -361,6 +366,7 @@ internal class ServiceSnapshotState {
         failure = source.failure
         transport = source.transport
         addressFamily = source.addressFamily
+        endpointSource = source.endpointSource?.takeIf { it in setOf("preset_ipv6", "manual_ipv4_fallback") }
         downloadBytesPerSecond = source.downloadBytesPerSecond.coerceAtLeast(0)
         uploadBytesPerSecond = source.uploadBytesPerSecond.coerceAtLeast(0)
         downloadedBytes = source.downloadedBytes.coerceAtLeast(0)
@@ -424,6 +430,7 @@ internal class ServiceSnapshotState {
                 failure = source.optJSONObject("failure")?.let(::failureFromNativeJson),
                 transport = source.optNullableString("transport"),
                 addressFamily = source.optNullableString("address_family"),
+                endpointSource = source.optNullableString("endpoint_source"),
                 downloadBytesPerSecond = source.optLong("download_bytes_per_second", 0),
                 uploadBytesPerSecond = source.optLong("upload_bytes_per_second", 0),
                 downloadedBytes = source.optLong("downloaded_bytes", 0),
@@ -535,6 +542,7 @@ internal class ServiceSnapshotState {
             networkQualityJson = networkQualityJson,
             sessionCongestionControl = sessionCongestionControl,
             adsRuleRevision = adsRuleRevision,
+            endpointSource = endpointSource,
             dataPlane = dataPlane,
             l4Json = l4Json,
             vpnGateJson = vpnGateJson,
@@ -602,6 +610,7 @@ internal class ServiceSnapshotState {
             WireKeys.NETWORK_QUALITY to fields.networkQualityJson,
             WireKeys.SESSION_CONGESTION_CONTROL to fields.sessionCongestionControl,
             WireKeys.ADS_RULE_REVISION to fields.adsRuleRevision,
+            WireKeys.ENDPOINT_SOURCE to fields.endpointSource,
             WireKeys.DATA_PLANE to fields.dataPlane,
             WireKeys.L4 to fields.l4Json,
             WireKeys.VPN_GATE to fields.vpnGateJson,
@@ -643,6 +652,7 @@ internal class ServiceSnapshotState {
             )
             putString(WireKeys.TRANSPORT, entries[WireKeys.TRANSPORT] as String?)
             putString(WireKeys.ADDRESS_FAMILY, entries[WireKeys.ADDRESS_FAMILY] as String?)
+            putString(WireKeys.ENDPOINT_SOURCE, entries[WireKeys.ENDPOINT_SOURCE] as String?)
             putString(WireKeys.CONNECTED_AT, entries[WireKeys.CONNECTED_AT] as String?)
             putLong(
                 WireKeys.DOWNLOAD_BYTES_PER_SECOND,
@@ -739,6 +749,7 @@ internal class ServiceSnapshotState {
             networkQualityJson,
             sessionCongestionControl,
             adsRuleRevision,
+            endpointSource,
             dataPlane,
             l4Json,
             vpnGateJson,

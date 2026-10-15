@@ -153,11 +153,11 @@ class AppController extends ChangeNotifier {
   String? get networkSettingsMessage {
     if (networkSettings.unconfirmed) return strings.get('settings_unknown');
     if (networkSettings.saveError != null) {
-      return strings.get(
-        networkSettings.saveError == 'NETWORK_SETTINGS_UNSUPPORTED'
-            ? 'settings_unsupported'
-            : 'settings_save_failed',
-      );
+      return strings.get(switch (networkSettings.saveError) {
+        'NETWORK_SETTINGS_UNSUPPORTED' => 'settings_unsupported',
+        'ENDPOINT_PRESETS_UNSUPPORTED' => 'endpoint_preset_unsupported',
+        _ => 'settings_save_failed',
+      });
     }
     final state = networkSettings.state;
     if (state == null || state.operationId == null) return null;
@@ -374,7 +374,8 @@ class AppController extends ChangeNotifier {
   /// Warn for a saved override or a still-running custom session. A draft
   /// or a saved reset cannot describe what the active session is using.
   bool get hasCustomZeroTrustEndpointRisk {
-    bool custom(UsqueProfile profile) {
+    bool custom(UsqueProfile profile, {bool fallback = false}) {
+      if (profile.endpointPresetRegion != null && !fallback) return false;
       final identity = identityStatus(profile.id);
       if (identity.provider != IdentityProvider.zeroTrust) return false;
       final registeredV4 = InternetAddress.tryParse(
@@ -392,14 +393,18 @@ class AppController extends ChangeNotifier {
       return v4 != null &&
           v6 != null &&
           (!listEquals(v4.rawAddress, registeredV4!.rawAddress) ||
-              !listEquals(v6.rawAddress, registeredV6!.rawAddress));
+              (!fallback &&
+                  !listEquals(v6.rawAddress, registeredV6!.rawAddress)));
     }
 
     if (custom(activeProfile)) return true;
     final applied = networkSettings.state?.appliedProfile;
     return (snapshot.isConnected || snapshot.isTransitional) &&
         applied != null &&
-        custom(applied);
+        custom(
+          applied,
+          fallback: snapshot.endpointSource == 'manual_ipv4_fallback',
+        );
   }
 
   void _captureSharedNetwork() {
@@ -574,6 +579,7 @@ class AppController extends ChangeNotifier {
           activeProfile.dataPlane == DataPlaneMode.l4Proxy ||
           activeProfile.tlsFingerprint != TlsFingerprint.defaultProfile ||
           activeProfile.vpnGate.enabled ||
+          activeProfile.endpointPresetRegion != null ||
           (activeProfile.endpointSelection == EndpointSelection.automatic &&
               identityStatus(activeProfile.id).provider !=
                   IdentityProvider.zeroTrust);
@@ -1185,6 +1191,13 @@ class AppController extends ChangeNotifier {
       throw EngineException(
         'TLS_FINGERPRINT_UNSUPPORTED',
         strings.get('tls_fingerprint_unsupported'),
+      );
+    }
+    if (profile.endpointPresetRegion != null &&
+        !(engineCapabilities?.endpointPresets ?? false)) {
+      throw EngineException(
+        'ENDPOINT_PRESETS_UNSUPPORTED',
+        strings.get('endpoint_preset_unsupported'),
       );
     }
     if (profile.endpointSelection == EndpointSelection.automatic &&
@@ -2546,6 +2559,20 @@ class AppController extends ChangeNotifier {
       lastError = strings.get('zero_trust_endpoint_unsupported');
       _notifyListeners();
       return false;
+    }
+    if (updated.endpointPresetRegion != null) {
+      if (engineCapabilities == null) await _refreshCapabilities();
+      if (!(engineCapabilities?.endpointPresets ?? false)) {
+        lastError = strings.get('endpoint_preset_unsupported');
+        _notifyListeners();
+        return false;
+      }
+      if (updated.endpointPresetRegion!.hostname(identityStatus(updated.id)) ==
+          null) {
+        lastError = strings.get('endpoint_preset_verify');
+        _notifyListeners();
+        return false;
+      }
     }
     if (updated.endpointSelection == EndpointSelection.automatic &&
         identityStatus(updated.id).provider != IdentityProvider.zeroTrust) {

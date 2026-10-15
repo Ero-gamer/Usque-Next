@@ -18,6 +18,7 @@ mod direct_gateway;
 mod dns;
 mod dns_stream;
 mod encrypted_dns;
+mod endpoint_preset;
 mod endpoint_race;
 mod feature_flags;
 mod final_dns;
@@ -84,7 +85,8 @@ compile_error!("fault-injection is restricted to test/debug lab builds");
 
 pub use data_plane::{ChainExitStart, DataPlaneRuntime, TunPacketIo, VpnGateStart};
 pub use diagnostic_probe::{
-    NetworkProbeResult, h3_probe_endpoints, probe_encrypted_dns, probe_h3_handshake,
+    NetworkProbeResult, PROBE_IO_TIMEOUT as NETWORK_PROBE_IO_TIMEOUT, h3_probe_endpoints,
+    h3_probe_endpoints_resolved, probe_encrypted_dns, probe_h3_handshake,
     probe_h3_handshake_candidates,
 };
 pub use encrypted_dns::{DirectDnsError, DirectDnsQueryContext, DirectDnsResolver};
@@ -123,8 +125,8 @@ pub use socket::{
     PhysicalNetworkSnapshot, STALE_GENERATION_REASON, SocketHandle, SocketProtector,
 };
 pub use socks5::Socks5Runtime;
-pub use split_dns::resolve_physical_host;
 pub use split_dns::{SPLIT_DNS_IPV4, SPLIT_DNS_IPV6};
+pub use split_dns::{resolve_endpoint_preset_aaaa, resolve_physical_host};
 pub use telemetry::{
     CONNECTION_TIMELINE_CAPACITY, ConnectionEvent, ConnectionEventType, ConnectionMetrics,
     ConnectionTelemetry, ConnectionTimelineSnapshot,

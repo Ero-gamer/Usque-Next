@@ -24,6 +24,7 @@ use usque_core::{DataPlaneMode, L4Snapshot, Profile, TransportFailure};
 
 pub struct DataPlaneRuntime {
     endpoint_pool: usque_core::EndpointPool,
+    endpoint_preset_tier: Option<usque_core::EndpointPresetTier>,
     inner: RuntimeInner,
     gate: Option<Box<GateRuntime>>,
     warp_network: FinalNetworkParameters,
@@ -242,6 +243,9 @@ impl DataPlaneRuntime {
     pub fn endpoint_pool(&self) -> usque_core::EndpointPool {
         self.endpoint_pool
     }
+    pub fn endpoint_preset_tier(&self) -> Option<usque_core::EndpointPresetTier> {
+        self.endpoint_preset_tier
+    }
     /// Only the final application frontend observes this policy. The outer
     /// transport and an optional WARP underlay remain untouched.
     pub fn update_traffic_policy(&mut self, disable_quic: bool) {
@@ -276,6 +280,7 @@ impl DataPlaneRuntime {
             dns_servers: profile.dns_servers.clone(),
         };
         let endpoint_pool = identity.endpoint_pool();
+        let endpoint_preset_tier = identity.endpoint_preset_tier().ok();
         let inner = match profile.data_plane {
             DataPlaneMode::ConnectIp => RuntimeInner::ConnectIp(Box::new(
                 MasqueRuntime::start_with_geo_policy(
@@ -289,6 +294,7 @@ impl DataPlaneRuntime {
         };
         Ok(Self {
             endpoint_pool,
+            endpoint_preset_tier,
             inner,
             gate: None,
             warp_network,
@@ -1502,6 +1508,7 @@ mod tests {
         .unwrap();
         let runtime = DataPlaneRuntime {
             endpoint_pool: usque_core::EndpointPool::WarpPlus,
+            endpoint_preset_tier: None,
             inner: RuntimeInner::ConnectIp(Box::new(warp)),
             gate: None,
             warp_network: FinalNetworkParameters {

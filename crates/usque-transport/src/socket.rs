@@ -242,6 +242,44 @@ pub trait SocketProtector: Send + Sync {
             .await
     }
 
+    /// Bootstrap DNS for an allowlisted built-in endpoint. Windows authorizes
+    /// this purpose separately while the VPN is still being prepared.
+    async fn protect_endpoint_preset_dns_generation(
+        &self,
+        socket: SocketHandle,
+        remote: SocketAddr,
+        protocol: DirectProtocol,
+        expected_generation: u64,
+    ) -> Result<DirectEgressLease, String> {
+        self.protect_for_target_generation(socket, remote, protocol, expected_generation)
+            .await
+    }
+
+    /// Resolves only AAAA records on the selected physical network. Configured
+    /// application DNS and the tunnel resolver must not service this lookup.
+    async fn resolve_endpoint_preset(
+        &self,
+        host: &str,
+        port: u16,
+        expected_generation: u64,
+    ) -> Result<Vec<SocketAddr>, String> {
+        crate::split_dns::resolve_endpoint_preset_aaaa(self, host, port, expected_generation).await
+    }
+
+    /// Publishes a finite candidate set before any MASQUE socket is opened.
+    /// Empty sets revoke old candidates while retaining the saved IPv4 fallback.
+    async fn authorize_endpoint_preset_candidates(
+        &self,
+        _host: &str,
+        _candidates: &[SocketAddr],
+        expected_generation: u64,
+    ) -> Result<(), String> {
+        if self.network_generation().unwrap_or_default() != expected_generation {
+            return Err(STALE_GENERATION_REASON.to_owned());
+        }
+        Ok(())
+    }
+
     /// Resolves a GeoSite-selected host using the platform's selected physical
     /// DNS path. Implementations must not fall back to the tunnel resolver.
     async fn resolve_direct(&self, host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
@@ -307,9 +345,19 @@ pub trait SocketProtector: Send + Sync {
 #[derive(Debug, Default)]
 pub struct NoopSocketProtector;
 
+#[async_trait]
 impl SocketProtector for NoopSocketProtector {
     fn protect(&self, _socket: SocketHandle) -> Result<(), String> {
         Ok(())
+    }
+
+    async fn resolve_endpoint_preset(
+        &self,
+        host: &str,
+        port: u16,
+        _expected_generation: u64,
+    ) -> Result<Vec<SocketAddr>, String> {
+        crate::endpoint_preset::resolve_system_ipv6(host, port).await
     }
 }
 

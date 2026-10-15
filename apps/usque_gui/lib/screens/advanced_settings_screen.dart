@@ -42,6 +42,8 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
   late TlsFingerprint _tlsFingerprint;
   late IpPolicy _ipPolicy;
   late EndpointSelection _endpointSelection;
+  late bool _presetMode;
+  late EndpointPresetRegion _presetRegion;
   late bool _allowLan;
   late bool _disableQuic;
   late DirectDnsSettings _directDns;
@@ -69,12 +71,14 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
   final _focus = List.generate(9, (_) => FocusNode());
 
   List<Object> get _values => [
-    !_zeroTrustEndpointIpsManaged &&
-            _endpointSelection == EndpointSelection.automatic
+    _usingPreset ||
+            (!_zeroTrustEndpointIpsManaged &&
+                _endpointSelection == EndpointSelection.automatic)
         ? widget.controller.activeProfile.endpointIpv4
         : _endpointV4.text,
-    !_zeroTrustEndpointIpsManaged &&
-            _endpointSelection == EndpointSelection.automatic
+    _usingPreset ||
+            (!_zeroTrustEndpointIpsManaged &&
+                _endpointSelection == EndpointSelection.automatic)
         ? widget.controller.activeProfile.endpointIpv6
         : _endpointV6.text,
     _port.text,
@@ -103,6 +107,7 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
     _proxy.systemProxy,
     _endpointSelection,
     _warpDns,
+    _usingPreset ? _presetRegion.name : '',
   ];
   bool get _dirty => !listEquals(_values, _baseline);
   void _edited() {
@@ -119,6 +124,88 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
           .identityStatus(widget.controller.activeProfile.id)
           .provider ==
       IdentityProvider.zeroTrust;
+
+  bool get _usingPreset =>
+      _presetMode &&
+      (_zeroTrustEndpointIpsManaged ||
+          _endpointSelection == EndpointSelection.custom);
+
+  bool get _presetSupported =>
+      widget.controller.engineCapabilities?.endpointPresets ?? false;
+
+  String? get _presetHostname => _presetRegion.hostname(
+    widget.controller.identityStatus(widget.controller.activeProfile.id),
+  );
+
+  bool get _ipv6PresetPolicy =>
+      _ipPolicy == IpPolicy.ipv6Only || _ipPolicy == IpPolicy.preferIpv6;
+
+  Future<IpPolicy?> _choosePresetPolicy() async {
+    final strings = widget.controller.strings;
+    var selected = IpPolicy.ipv6Only;
+    return showDialog<IpPolicy>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => UsqueDialog(
+          icon: LucideIcons.globe,
+          title: strings.get('endpoint_preset_policy'),
+          content: RadioGroup<IpPolicy>(
+            groupValue: selected,
+            onChanged: (value) {
+              if (value != null) update(() => selected = value);
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                RadioListTile<IpPolicy>(
+                  value: IpPolicy.ipv6Only,
+                  title: Text(_ipPolicyLabel(IpPolicy.ipv6Only)),
+                  subtitle: Text(strings.get('endpoint_preset_only_hint')),
+                  contentPadding: EdgeInsets.zero,
+                  autofocus: true,
+                ),
+                RadioListTile<IpPolicy>(
+                  value: IpPolicy.preferIpv6,
+                  title: Text(_ipPolicyLabel(IpPolicy.preferIpv6)),
+                  subtitle: Text(strings.get('endpoint_preset_prefer_hint')),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(strings.get('cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, selected),
+              child: Text(strings.get('continue')),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _setPresetMode(bool preset) async {
+    if (_saving || preset == _presetMode) return;
+    if (preset && (!_presetSupported || _presetHostname == null)) return;
+    final account = _editingAccountId;
+    final policy = preset && !_ipv6PresetPolicy
+        ? await _choosePresetPolicy()
+        : _ipPolicy;
+    if (!mounted ||
+        policy == null ||
+        account != widget.controller.activeProfile.id) {
+      return;
+    }
+    setState(() {
+      _presetMode = preset;
+      _ipPolicy = policy;
+    });
+    _edited();
+  }
 
   bool get _ztEndpointEditingSupported =>
       widget.controller.engineCapabilities?.zeroTrustEndpointEditing ?? false;
@@ -205,6 +292,8 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
     _tlsFingerprint = profile.tlsFingerprint;
     _ipPolicy = profile.ipPolicy;
     _endpointSelection = profile.endpointSelection;
+    _presetMode = profile.endpointPresetRegion != null;
+    _presetRegion = profile.endpointPresetRegion ?? EndpointPresetRegion.us;
     _allowLan = profile.allowLan;
     _disableQuic = profile.disableQuic;
     _directDns = profile.directDns;
@@ -455,7 +544,8 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
     final automaticAvailable =
         widget.controller.engineCapabilities?.automaticEndpoints ?? false;
     final managed = _zeroTrustEndpointIpsManaged;
-    final addresses = managed || _endpointSelection == EndpointSelection.custom;
+    final custom = managed || _endpointSelection == EndpointSelection.custom;
+    final addresses = custom && !_usingPreset;
     return ContentSection(
       icon: LucideIcons.mapPin,
       title: strings.get('endpoint_section'),
@@ -499,19 +589,93 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 8),
-          HintText(
-            automaticAvailable
-                ? strings.get(
-                    _endpointSelection == EndpointSelection.automatic
-                        ? 'endpoint_automatic_help'
-                        : 'endpoint_custom_help',
-                  )
-                : strings.get('endpoint_unsupported'),
-          ),
+          if (!_usingPreset) ...[
+            const SizedBox(height: 8),
+            HintText(
+              automaticAvailable
+                  ? strings.get(
+                      _endpointSelection == EndpointSelection.automatic
+                          ? 'endpoint_automatic_help'
+                          : 'endpoint_custom_help',
+                    )
+                  : strings.get('endpoint_unsupported'),
+            ),
+          ],
           const SizedBox(height: 16),
         ],
-        if (managed && !_ztEndpointsUnlocked) ...<Widget>[
+        if (custom) ...<Widget>[
+          LayoutBuilder(
+            builder: (context, constraints) => SegmentedButton<bool>(
+              key: const ValueKey('endpoint-custom-source'),
+              direction:
+                  constraints.maxWidth < 300 ||
+                      MediaQuery.textScalerOf(context).scale(1) > 1.3
+                  ? Axis.vertical
+                  : Axis.horizontal,
+              segments: [
+                ButtonSegment(
+                  value: false,
+                  label: Text(strings.get('endpoint_manual')),
+                ),
+                ButtonSegment(
+                  value: true,
+                  label: Text(strings.get('endpoint_presets')),
+                  enabled: _presetSupported && _presetHostname != null,
+                ),
+              ],
+              selected: {_presetMode},
+              onSelectionChanged: _saving
+                  ? null
+                  : (values) => _setPresetMode(values.first),
+              showSelectedIcon: false,
+            ),
+          ),
+          if (!_presetSupported || _presetHostname == null) ...[
+            const SizedBox(height: 8),
+            HintText(
+              strings.get(
+                !_presetSupported
+                    ? 'endpoint_preset_unsupported'
+                    : 'endpoint_preset_verify',
+              ),
+            ),
+          ],
+          if (_usingPreset) ...[
+            const SizedBox(height: 16),
+            DropdownButtonFormField<EndpointPresetRegion>(
+              key: const ValueKey('endpoint-preset-region'),
+              initialValue: _presetRegion,
+              style: FieldDropdown.valueStyle(context),
+              iconSize: FieldDropdown.iconSize,
+              isExpanded: true,
+              decoration: FieldDropdown.decoration(
+                context,
+                labelText: strings.get('endpoint_preset_country'),
+              ),
+              items: [
+                for (final region in EndpointPresetRegion.values)
+                  DropdownMenuItem(
+                    value: region,
+                    child: Text(strings.get('endpoint_preset_${region.name}')),
+                  ),
+              ],
+              onChanged: _saving
+                  ? null
+                  : (region) {
+                      if (region == null) return;
+                      setState(() => _presetRegion = region);
+                      _edited();
+                    },
+            ),
+            if (_presetHostname != null) ...[
+              const SizedBox(height: 8),
+              HintText(strings.get('ipv6_only')),
+            ],
+            const SizedBox(height: 16),
+          ],
+          if (!_usingPreset) const SizedBox(height: 16),
+        ],
+        if (managed && !_usingPreset && !_ztEndpointsUnlocked) ...<Widget>[
           if (_ztEndpointEditingSupported && _ztRegisteredEndpointsAvailable)
             Align(
               alignment: AlignmentDirectional.centerStart,
@@ -536,6 +700,17 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
         ],
         _ResponsiveFields(
           children: <Widget>[
+            if (_usingPreset)
+              TextFormField(
+                key: ValueKey(
+                  'endpoint-preset-fallback-${widget.controller.activeProfile.endpointIpv4}',
+                ),
+                initialValue: widget.controller.activeProfile.endpointIpv4,
+                readOnly: true,
+                decoration: InputDecoration(
+                  labelText: strings.get('endpoint_preset_fallback'),
+                ),
+              ),
             if (addresses)
               TextFormField(
                 key: _fieldKeys[0],
@@ -607,6 +782,7 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
         DropdownButtonFormField<IpPolicy>(
           style: FieldDropdown.valueStyle(context),
           iconSize: FieldDropdown.iconSize,
+          key: ValueKey(_ipPolicy),
           initialValue: _ipPolicy,
           isExpanded: true,
           decoration: FieldDropdown.decoration(
@@ -900,7 +1076,25 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
 
   Future<void> _save() async {
     if (_saving) return;
-    if (_zeroTrustEndpointIpsManaged &&
+    if (_usingPreset) {
+      if (!_presetSupported || _presetHostname == null) {
+        setState(
+          () => _validationError = widget.controller.strings.get(
+            !_presetSupported
+                ? 'endpoint_preset_unsupported'
+                : 'endpoint_preset_verify',
+          ),
+        );
+        return;
+      }
+      if (!_ipv6PresetPolicy) {
+        final policy = await _choosePresetPolicy();
+        if (!mounted || policy == null) return;
+        setState(() => _ipPolicy = policy);
+      }
+    }
+    if (!_usingPreset &&
+        _zeroTrustEndpointIpsManaged &&
         _ztEndpointEditingSupported &&
         _ztRegisteredEndpointsAvailable &&
         !_ztEndpointsUnlocked &&
@@ -963,9 +1157,11 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
     });
     final profile = widget.controller.activeProfile;
     final endpointIpsManaged = _zeroTrustEndpointIpsManaged;
-    final preserveEndpointIps = endpointIpsManaged
-        ? !_ztEndpointEditingSupported || !_ztRegisteredEndpointsAvailable
-        : _endpointSelection == EndpointSelection.automatic;
+    final preserveEndpointIps =
+        _usingPreset ||
+        (endpointIpsManaged
+            ? !_ztEndpointEditingSupported || !_ztRegisteredEndpointsAvailable
+            : _endpointSelection == EndpointSelection.automatic);
     const paths = [
       'endpoint.ipv4',
       'endpoint.ipv6',
@@ -991,6 +1187,7 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
       'proxy.system_proxy',
       'endpoint.selection',
       'warp_dns',
+      'endpoint.preset_region',
     ];
     final changedFields = <String>{
       for (var i = 0; i < paths.length; i++)
@@ -1015,6 +1212,8 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
         endpointSelection: endpointIpsManaged
             ? EndpointSelection.custom
             : _endpointSelection,
+        endpointPresetRegion: _usingPreset ? _presetRegion : null,
+        clearEndpointPresetRegion: !_usingPreset,
         endpointIpv4: preserveEndpointIps
             ? profile.endpointIpv4
             : _endpointV4.text.trim(),

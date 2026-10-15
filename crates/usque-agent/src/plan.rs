@@ -14,10 +14,120 @@ pub const MAX_DNS_SERVERS: usize = 8;
 pub const MAX_SPLIT_EXCLUSIONS: usize = 128;
 pub const MAX_ENDPOINT_CANDIDATES: usize = 2;
 pub const MAX_CONTROL_API_CANDIDATES: usize = 16;
+pub const MAX_PRESET_IPV6_CANDIDATES: usize = 16;
 pub const MIN_MTU: u16 = 1280;
 pub const MAX_MTU: u16 = 9000;
 const SPLIT_DNS_IPV4: IpAddr = IpAddr::V4(std::net::Ipv4Addr::new(198, 18, 0, 1));
 const SPLIT_DNS_IPV6: IpAddr = IpAddr::V6(std::net::Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1));
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PresetEndpointPolicy {
+    pub hostname: String,
+    pub port: u16,
+    pub ipv4_fallback: Option<SocketAddr>,
+    pub tcp: bool,
+    pub udp: bool,
+}
+
+impl PresetEndpointPolicy {
+    pub fn validate(&self) -> Result<(), PlanError> {
+        let known = usque_core::EndpointPresetRegion::ALL
+            .into_iter()
+            .any(|region| {
+                [
+                    usque_core::EndpointPresetTier::Free,
+                    usque_core::EndpointPresetTier::Plus,
+                    usque_core::EndpointPresetTier::ZeroTrust,
+                ]
+                .into_iter()
+                .any(|tier| region.hostname(tier) == self.hostname)
+            });
+        if !known
+            || self.port == 0
+            || !(self.tcp || self.udp)
+            || self.ipv4_fallback.is_some_and(|endpoint| {
+                !endpoint.is_ipv4()
+                    || endpoint.port() != self.port
+                    || endpoint.ip().is_unspecified()
+                    || endpoint.ip().is_multicast()
+            })
+        {
+            return Err(PlanError::PresetEndpointPolicy);
+        }
+        Ok(())
+    }
+
+    pub fn permits_protocol(&self, protocol: u8) -> bool {
+        match protocol {
+            6 => self.tcp,
+            17 => self.udp,
+            _ => false,
+        }
+    }
+
+    pub fn validate_candidates(&self, candidates: &[SocketAddr]) -> Result<(), PlanError> {
+        if candidates.len() > MAX_PRESET_IPV6_CANDIDATES
+            || candidates.iter().any(|candidate| {
+                !candidate.is_ipv6()
+                    || candidate.port() != self.port
+                    || !valid_preset_ipv6(candidate.ip())
+            })
+        {
+            return Err(PlanError::PresetEndpointPolicy);
+        }
+        Ok(())
+    }
+}
+
+fn valid_preset_ipv6(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V6(ip) => {
+            !ip.is_unspecified()
+                && !ip.is_loopback()
+                && !ip.is_multicast()
+                && !ip.is_unicast_link_local()
+                && !ip.is_unique_local()
+                && ip.to_ipv4_mapped().is_none()
+        }
+        IpAddr::V4(_) => false,
+    }
+}
+
+fn preset_policy_from_proto(
+    value: agent_v1::PresetEndpointPolicy,
+) -> Result<PresetEndpointPolicy, PlanError> {
+    let policy = PresetEndpointPolicy {
+        hostname: value.hostname,
+        port: u16::try_from(value.port).map_err(|_| PlanError::PresetEndpointPolicy)?,
+        ipv4_fallback: if value.ipv4_fallback.is_empty() {
+            None
+        } else {
+            Some(
+                value
+                    .ipv4_fallback
+                    .parse()
+                    .map_err(|_| PlanError::PresetEndpointPolicy)?,
+            )
+        },
+        tcp: value.tcp,
+        udp: value.udp,
+    };
+    policy.validate()?;
+    Ok(policy)
+}
+
+fn preset_policy_to_proto(value: &PresetEndpointPolicy) -> agent_v1::PresetEndpointPolicy {
+    agent_v1::PresetEndpointPolicy {
+        hostname: value.hostname.clone(),
+        port: u32::from(value.port),
+        ipv4_fallback: value
+            .ipv4_fallback
+            .map(|value| value.to_string())
+            .unwrap_or_default(),
+        tcp: value.tcp,
+        udp: value.udp,
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ValidatedTunnelPlan {
@@ -41,6 +151,8 @@ pub struct ValidatedTunnelPlan {
     pub defer_network_configuration: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub automatic_endpoint_policy: Option<AutomaticEndpointPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset_endpoint_policy: Option<PresetEndpointPolicy>,
 }
 
 impl TryFrom<agent_v1::TunnelPlan> for ValidatedTunnelPlan {
@@ -150,6 +262,10 @@ impl TryFrom<agent_v1::TunnelPlan> for ValidatedTunnelPlan {
                 .automatic_endpoint_policy
                 .map(policy_from_proto)
                 .transpose()?,
+            preset_endpoint_policy: value
+                .preset_endpoint_policy
+                .map(preset_policy_from_proto)
+                .transpose()?,
         };
         plan.validate()?;
         Ok(plan)
@@ -192,6 +308,10 @@ impl ValidatedTunnelPlan {
             vpn_chain: self.vpn_chain,
             defer_network_configuration: self.defer_network_configuration,
             automatic_endpoint_policy: self.automatic_endpoint_policy.map(policy_to_proto),
+            preset_endpoint_policy: self
+                .preset_endpoint_policy
+                .as_ref()
+                .map(preset_policy_to_proto),
         }
     }
     pub fn validate(&self) -> Result<(), PlanError> {
@@ -202,6 +322,17 @@ impl ValidatedTunnelPlan {
             return Err(PlanError::Mtu(u32::from(self.mtu)));
         }
         validate_endpoint_candidates(self.endpoint, &self.endpoint_candidates)?;
+        if let Some(policy) = &self.preset_endpoint_policy {
+            policy.validate()?;
+            if self.automatic_endpoint_policy.is_some()
+                || self
+                    .endpoint_candidates
+                    .iter()
+                    .any(|candidate| candidate.port() != policy.port)
+            {
+                return Err(PlanError::PresetEndpointPolicy);
+            }
+        }
         if let Some(policy) = self.automatic_endpoint_policy {
             validate_automatic_policy(policy)?;
             if self
@@ -384,6 +515,8 @@ fn validate_endpoint_candidates(
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum PlanError {
+    #[error("invalid built-in preset endpoint policy or candidate set")]
+    PresetEndpointPolicy,
     #[error(
         "automatic endpoint policy must describe an allowed pool, nonzero port, address family and protocol"
     )]
@@ -443,6 +576,7 @@ mod tests {
             vpn_chain: false,
             defer_network_configuration: false,
             automatic_endpoint_policy: None,
+            preset_endpoint_policy: None,
             profile_id: Uuid::new_v4().to_string(),
             endpoint: "162.159.198.2:443".to_owned(),
             endpoint_candidates: vec![
@@ -462,6 +596,48 @@ mod tests {
             assigned_ipv6: "2606:4700:110::2/128".to_owned(),
             split_dns: false,
         }
+    }
+
+    #[test]
+    fn preset_policy_is_allowlisted_bounded_and_keeps_manual_anchor_limits() {
+        let mut wire = valid_plan();
+        wire.preset_endpoint_policy = Some(agent_v1::PresetEndpointPolicy {
+            hostname: "us.v6.plus.orangesky.dev".into(),
+            port: 443,
+            ipv4_fallback: "192.0.2.42:443".into(),
+            tcp: true,
+            udp: true,
+        });
+        let plan = ValidatedTunnelPlan::try_from(wire.clone()).unwrap();
+        assert_eq!(plan.to_proto(), wire);
+        let policy = plan.preset_endpoint_policy.unwrap();
+        let candidates = (1..=16)
+            .map(|last| format!("[2001:db8::{last}]:443").parse().unwrap())
+            .collect::<Vec<_>>();
+        assert!(policy.validate_candidates(&candidates).is_ok());
+        let mut too_many = candidates.clone();
+        too_many.push("[2001:db8::17]:443".parse().unwrap());
+        assert!(policy.validate_candidates(&too_many).is_err());
+        for value in [
+            "[::1]:443",
+            "[fe80::1]:443",
+            "[fc00::1]:443",
+            "[::ffff:192.0.2.1]:443",
+            "[2001:db8::1]:8443",
+            "192.0.2.1:443",
+        ] {
+            assert!(
+                policy
+                    .validate_candidates(&[value.parse().unwrap()])
+                    .is_err(),
+                "{value}"
+            );
+        }
+        wire.preset_endpoint_policy.as_mut().unwrap().hostname = "untrusted.example".into();
+        assert!(ValidatedTunnelPlan::try_from(wire.clone()).is_err());
+        wire.preset_endpoint_policy.as_mut().unwrap().hostname = policy.hostname;
+        wire.endpoint_candidates.push("[2001:db8::3]:443".into());
+        assert!(ValidatedTunnelPlan::try_from(wire).is_err());
     }
 
     #[test]

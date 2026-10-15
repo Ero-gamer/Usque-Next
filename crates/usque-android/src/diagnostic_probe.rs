@@ -244,31 +244,45 @@ fn run_probe(
         if kind == "dns" {
             usque_transport::probe_encrypted_dns(&profile.direct_dns, protector, cancellation).await
         } else {
-            let identity = match warp_identity_from_secret(secret)
-                .ok()
-                .and_then(|identity| MasqueTlsIdentity::from_warp_identity(&identity).ok())
-                .map(|identity| identity.with_fingerprint(profile.tls_fingerprint))
-            {
-                Some(identity) => identity,
-                None => return ResultCode::NotApplicable,
-            };
-            let endpoints = usque_transport::h3_probe_endpoints(&profile);
-            let sni = if profile.data_plane == usque_core::DataPlaneMode::L4Proxy {
-                let Some(sni) = identity.l4_server_name() else {
-                    return ResultCode::NotApplicable;
+            tokio::time::timeout(usque_transport::NETWORK_PROBE_IO_TIMEOUT, async {
+                let identity = match warp_identity_from_secret(secret)
+                    .ok()
+                    .and_then(|identity| MasqueTlsIdentity::from_warp_identity(&identity).ok())
+                    .map(|identity| identity.with_fingerprint(profile.tls_fingerprint))
+                {
+                    Some(identity) => identity,
+                    None => return ResultCode::NotApplicable,
                 };
-                sni
-            } else {
-                &profile.endpoint.sni
-            };
-            usque_transport::probe_h3_handshake_candidates(
-                &endpoints,
-                sni,
-                &identity,
-                protector,
-                cancellation,
-            )
+                let endpoints = match usque_transport::h3_probe_endpoints_resolved(
+                    &profile,
+                    &identity,
+                    Arc::clone(&protector),
+                    cancellation.clone(),
+                )
+                .await
+                {
+                    Ok(endpoints) => endpoints,
+                    Err(result) => return result,
+                };
+                let sni = if profile.data_plane == usque_core::DataPlaneMode::L4Proxy {
+                    let Some(sni) = identity.l4_server_name() else {
+                        return ResultCode::NotApplicable;
+                    };
+                    sni
+                } else {
+                    &profile.endpoint.sni
+                };
+                usque_transport::probe_h3_handshake_candidates(
+                    &endpoints,
+                    sni,
+                    &identity,
+                    protector,
+                    cancellation,
+                )
+                .await
+            })
             .await
+            .unwrap_or(ResultCode::TimedOut)
         }
     });
     // Current-thread tasks (including aborted DNS drivers) are dropped before
@@ -320,6 +334,9 @@ impl SocketProtector for ProbeProtector {
     }
     fn endpoint_family_available(&self, endpoint: SocketAddr) -> Option<bool> {
         self.0.endpoint_family_available(endpoint)
+    }
+    fn physical_dns_servers(&self) -> Vec<SocketAddr> {
+        self.0.physical_dns_servers()
     }
 }
 

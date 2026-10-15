@@ -125,12 +125,27 @@ class _ZeroTrustEndpointRiskNotice extends StatelessWidget {
   final AppController controller;
 
   @override
-  Widget build(BuildContext context) => ControllerSelector<bool>(
+  Widget build(BuildContext context) => ControllerSelector<(bool, bool)>(
     controller: controller,
     active: (app) => app.section == AppSection.home,
-    selector: (app) => app.hasCustomZeroTrustEndpointRisk,
-    builder: (context, show) => show
-        ? Padding(
+    selector: (app) => (
+      app.hasCustomZeroTrustEndpointRisk,
+      app.snapshot.isConnected &&
+          app.snapshot.endpointSource == 'manual_ipv4_fallback',
+    ),
+    builder: (context, state) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (state.$2)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: HintText(
+              controller.strings.get('endpoint_preset_fallback_active'),
+              key: const ValueKey('home-endpoint-preset-fallback'),
+            ),
+          ),
+        if (state.$1)
+          Padding(
             padding: const EdgeInsets.only(bottom: 24),
             child: WarningBanner(
               key: const ValueKey('home-zero-trust-endpoint-risk'),
@@ -142,8 +157,9 @@ class _ZeroTrustEndpointRiskNotice extends StatelessWidget {
                 'zero_trust_endpoint_home_risk_body',
               ),
             ),
-          )
-        : const SizedBox.shrink(),
+          ),
+      ],
+    ),
   );
 }
 

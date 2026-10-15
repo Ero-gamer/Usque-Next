@@ -1191,6 +1191,10 @@ impl ControlService {
         let mut state = self.state.lock().await;
         if let Some(active) = data_plane.as_mut() {
             let gate = active.runtime.gate_status();
+            state.update_endpoint_source(usque_core::EndpointSource::for_profile(
+                &active.profile,
+                active.runtime.health().path().endpoint_family,
+            ));
             self.gate_status.send_replace(gate.clone());
             state.update_data_plane(active.profile.data_plane, active.runtime.l4_snapshot());
             if !platform_recovery_pending {
@@ -1435,7 +1439,6 @@ impl ControlService {
         .ok()
         .and_then(Result::ok)
         .map(|identity| identity.with_fingerprint(profile.tls_fingerprint));
-        let endpoints = usque_transport::h3_probe_endpoints(&profile);
         Some(diagnostics::DiagnosticProbeContext {
             settings: profile.direct_dns.clone(),
             protector,
@@ -1451,7 +1454,7 @@ impl ControlService {
                     } else {
                         profile.endpoint.sni.clone()
                     };
-                    Some((endpoints, sni, identity))
+                    Some((profile.clone(), sni, identity))
                 }),
             _lifecycle: Some(lifecycle),
         })
@@ -1482,7 +1485,10 @@ impl ControlService {
             .ok()
             .and_then(|value| value.parse().ok())
             .ok_or(ControlServiceError::InvalidStoredIdentity)?;
-        MasqueTlsIdentity::new(private_key, &pin, ipv4, ipv6).map_err(Into::into)
+        let metadata = self.load_identity_metadata(profile_id).await?;
+        MasqueTlsIdentity::new(private_key, &pin, ipv4, ipv6)
+            .map(|identity| identity.with_identity_metadata(metadata))
+            .map_err(Into::into)
     }
 
     fn emit_geo_progress(&self, progress: GeoProgress) {
@@ -2396,6 +2402,10 @@ impl ControlService {
         let snapshot = {
             let mut state = self.state.lock().await;
             state.update_data_plane(profile.data_plane, runtime.l4_snapshot());
+            state.update_endpoint_source(usque_core::EndpointSource::for_profile(
+                &profile,
+                path.endpoint_family,
+            ));
             if profile.transport == TransportPolicy::Auto && path.transport == Transport::Http2 {
                 state.transition(ConnectionPhase::ConnectingHttp2)?;
             }
@@ -4611,6 +4621,15 @@ fn connection_error_for(error: &ControlServiceError) -> ConnectionError {
 #[cfg(windows)]
 pub(crate) fn map_windows_vpn_error(error: windows_agent::WindowsVpnError) -> ControlServiceError {
     let error = match error {
+        windows_agent::WindowsVpnError::MissingCapabilities(capabilities)
+            if capabilities.contains("endpoint_preset_leases") =>
+        {
+            return ControlServiceError::PlatformRecovery {
+                code: "ENDPOINT_PRESETS_UNSUPPORTED",
+                message: "Update the Windows Agent to use endpoint presets.".to_owned(),
+                retryable: false,
+            };
+        }
         windows_agent::WindowsVpnError::AutomaticRecoveryPending {
             operation_id,
             journal_generation,
@@ -4952,6 +4971,19 @@ fn profile_from_proto(source: v1::Profile) -> Result<Profile, ControlServiceErro
                     ));
                 }
             },
+            preset_region: if endpoint.preset_region.is_empty() {
+                None
+            } else {
+                Some(
+                    usque_core::EndpointPresetRegion::parse(&endpoint.preset_region).ok_or_else(
+                        || {
+                            ControlServiceError::InvalidRequest(
+                                "unknown endpoint preset region".to_owned(),
+                            )
+                        },
+                    )?,
+                )
+            },
         },
         ip_policy: match source.ip_policy {
             value if value == v1::IpPolicy::Unspecified as i32 => IpPolicy::Auto,
@@ -5095,6 +5127,11 @@ pub(crate) fn profile_to_proto(profile: &Profile) -> v1::Profile {
             TransportPolicy::Http2 => v1::TransportPolicy::Http2 as i32,
         },
         endpoint: Some(v1::EndpointSettings {
+            preset_region: profile
+                .endpoint
+                .preset_region
+                .map(|region| region.as_str().to_owned())
+                .unwrap_or_default(),
             ipv4: profile.endpoint.ipv4.to_string(),
             ipv6: profile.endpoint.ipv6.to_string(),
             port: u32::from(profile.endpoint.port),
@@ -5280,6 +5317,7 @@ fn current_capabilities() -> v1::Capabilities {
         chain_proxy_encrypted_dns: cfg!(windows),
         custom_bypass: cfg!(windows),
         automatic_endpoints: true,
+        endpoint_presets: true,
         zero_trust_endpoint_editing: true,
         routing_rules: cfg!(windows),
         live_ads_rules: cfg!(windows),
@@ -5330,6 +5368,10 @@ fn current_capabilities() -> v1::Capabilities {
 
 pub(crate) fn snapshot_to_proto(snapshot: &ConnectionSnapshot) -> v1::ConnectionSnapshot {
     v1::ConnectionSnapshot {
+        endpoint_source: snapshot
+            .endpoint_source
+            .map(|source| source.as_str().to_owned())
+            .unwrap_or_default(),
         ads_rule_revision: snapshot.ads_rule_revision.clone(),
         chain_exit: None,
         vpn_gate: None,
@@ -6720,6 +6762,7 @@ mod tests {
                 port: 443,
                 sni: usque_core::ZERO_TRUST_SNI.to_owned(),
                 selection: usque_core::EndpointSelection::Custom,
+                preset_region: None,
             },
             ..Profile::default()
         };
@@ -8098,6 +8141,7 @@ mod tests {
             port: 443,
             sni: usque_core::ZERO_TRUST_SNI.to_owned(),
             selection: usque_core::EndpointSelection::Custom,
+            preset_region: None,
         };
         service
             .update_config(move |latest| {
@@ -8859,6 +8903,7 @@ mod tests {
             port: 8443,
             sni: "shared.example.com".to_owned(),
             selection: usque_core::EndpointSelection::Custom,
+            preset_region: None,
         };
         let managed = ManagedEndpointIps {
             ipv4: "162.159.197.8".parse().unwrap(),
@@ -8964,6 +9009,102 @@ mod tests {
         legacy.tls_fingerprint = 99;
         assert!(profile_from_proto(legacy).is_err());
         assert_eq!(current_capabilities().tls_fingerprints, [1, 2]);
+    }
+
+    #[tokio::test]
+    async fn diagnostic_identity_preserves_verified_tier_without_loading_account_tokens() {
+        for (provider, license, expected) in [
+            (
+                IdentityProvider::Consumer,
+                None,
+                usque_core::EndpointPresetTier::Free,
+            ),
+            (
+                IdentityProvider::Consumer,
+                Some("fixture-license"),
+                usque_core::EndpointPresetTier::Plus,
+            ),
+            (
+                IdentityProvider::zero_trust("fixture").unwrap(),
+                None,
+                usque_core::EndpointPresetTier::ZeroTrust,
+            ),
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            let vault = Arc::new(MemoryVault::default());
+            let service = ControlService::open_with_vault(
+                ConfigStore::new(directory.path().join("config.json")),
+                Arc::clone(&vault) as Arc<dyn SecretVault>,
+            )
+            .unwrap();
+            let profile_id = service.config_snapshot().await.active_profile_id.unwrap();
+            service
+                .persist_identity(profile_id, &test_identity(provider, license), None)
+                .await
+                .unwrap();
+            vault
+                .delete(profile_id, SecretRecord::AccessToken)
+                .await
+                .unwrap();
+            vault
+                .delete(profile_id, SecretRecord::DeviceId)
+                .await
+                .unwrap();
+            vault
+                .delete(profile_id, SecretRecord::License)
+                .await
+                .unwrap();
+            let diagnostic = service
+                .load_diagnostic_tls_identity(profile_id)
+                .await
+                .unwrap();
+            assert_eq!(diagnostic.endpoint_preset_tier().unwrap(), expected);
+            assert!(diagnostic.l4_server_name().is_some());
+        }
+    }
+
+    #[test]
+    fn endpoint_presets_append_wire_fields_and_reject_unknown_regions() {
+        let endpoint = v1::EndpointSettings {
+            preset_region: "fi".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            &usque_ipc::encode_frame(&endpoint).unwrap()[4..],
+            &[0x32, 2, b'f', b'i']
+        );
+        let capabilities = v1::Capabilities {
+            endpoint_presets: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            &usque_ipc::encode_frame(&capabilities).unwrap()[4..],
+            &[0x88, 3, 1]
+        );
+        let source = v1::ConnectionSnapshot {
+            endpoint_source: "preset_ipv6".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            &usque_ipc::encode_frame(&source).unwrap()[4..3 + 4],
+            &[0xc2, 1, 11]
+        );
+        for region in usque_core::EndpointPresetRegion::ALL {
+            let mut profile = Profile::default();
+            profile.endpoint.selection = usque_core::EndpointSelection::Custom;
+            profile.endpoint.preset_region = Some(region);
+            profile.ip_policy = IpPolicy::Ipv6Only;
+            assert_eq!(
+                profile_from_proto(profile_to_proto(&profile)).unwrap(),
+                profile
+            );
+        }
+        let mut wire = profile_to_proto(&Profile::default());
+        wire.endpoint.as_mut().unwrap().preset_region = "unknown".into();
+        assert!(profile_from_proto(wire.clone()).is_err());
+        wire.endpoint.as_mut().unwrap().preset_region = "us".into();
+        assert!(profile_from_proto(wire).is_err());
+        assert!(current_capabilities().endpoint_presets);
     }
 
     #[test]

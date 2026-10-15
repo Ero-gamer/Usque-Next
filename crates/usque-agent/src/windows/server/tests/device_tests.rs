@@ -74,6 +74,7 @@ async fn authenticated_device_lease_survives_an_old_pipes_eof_and_is_lazy() {
             reusable_tun_device: true,
             automatic_endpoint_leases: false,
             protected_tunnel_replacement: false,
+            endpoint_preset_leases: false,
             ..Default::default()
         },
     ));

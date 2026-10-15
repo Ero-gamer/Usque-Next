@@ -349,9 +349,16 @@ void main() {
             : LocalePreference.english
         ..engineCapabilities = const EngineCapabilities(
           automaticEndpoints: true,
+          endpointPresets: true,
           h3CongestionControlAlgorithms: CongestionControlAlgorithm.values,
           tlsFingerprints: TlsFingerprint.values,
         );
+      app.profileIdentityStatuses = {
+        UsqueProfile.defaultProfileId: const ProfileIdentityStatus(
+          state: ProfileIdentityState.ready,
+          licenseState: LicenseState.free,
+        ),
+      };
       app.sharedNetwork = app.sharedNetwork.copyWith(
         endpointSelection: custom
             ? EndpointSelection.custom
@@ -383,6 +390,68 @@ void main() {
         find.byKey(boundary),
         matchesGoldenFile(
           'goldens/endpoint_${custom ? 'custom_zh_dark' : 'automatic_en_light'}.png',
+        ),
+      );
+    }, tags: 'golden');
+  }
+
+  for (final chinese in [false, true]) {
+    testWidgets('endpoint preset ${chinese ? 'zh_dark' : 'en_light'}', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 1000);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final app = AppController(WorkflowEngine())
+        ..localePreference = chinese
+            ? LocalePreference.simplifiedChinese
+            : LocalePreference.english
+        ..engineCapabilities = const EngineCapabilities(
+          automaticEndpoints: true,
+          endpointPresets: true,
+          h3CongestionControlAlgorithms: CongestionControlAlgorithm.values,
+          tlsFingerprints: TlsFingerprint.values,
+        );
+      app.profileIdentityStatuses = {
+        UsqueProfile.defaultProfileId: const ProfileIdentityStatus(
+          state: ProfileIdentityState.ready,
+          licenseState: LicenseState.warpPlus,
+        ),
+      };
+      app.sharedNetwork = app.sharedNetwork.copyWith(
+        endpointSelection: EndpointSelection.custom,
+        endpointPresetRegion: EndpointPresetRegion.de,
+        ipPolicy: IpPolicy.preferIpv6,
+      );
+      addTearDown(app.dispose);
+      final boundary = GlobalKey();
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: boundary,
+          child: workflowHost(
+            app,
+            dark: chinese,
+            home: AdvancedSettingsScreen(controller: app),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final selector = find.byKey(const ValueKey('endpoint-selection'));
+      await tester.scrollUntilVisible(
+        selector,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await Scrollable.ensureVisible(tester.element(selector), alignment: 0.15);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining('orangesky.dev'), findsNothing);
+      expect(find.textContaining('Plus ·'), findsNothing);
+      await expectLater(
+        find.byKey(boundary),
+        matchesGoldenFile(
+          'goldens/endpoint_preset_${chinese ? 'zh_dark' : 'en_light'}.png',
         ),
       );
     }, tags: 'golden');

@@ -82,6 +82,7 @@ impl WindowsBackend {
             reusable_tun_device: true,
             automatic_endpoint_leases: true,
             protected_tunnel_replacement: true,
+            endpoint_preset_leases: true,
         }
     }
 }

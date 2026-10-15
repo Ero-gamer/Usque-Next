@@ -162,6 +162,51 @@ mod tests {
     }
 
     #[test]
+    fn preset_agent_contract_is_append_only() {
+        assert_eq!(
+            agent_v1::AgentCapabilities {
+                endpoint_preset_leases: true,
+                ..Default::default()
+            }
+            .encode_to_vec(),
+            [0x98, 0x01, 1]
+        );
+        assert_eq!(
+            agent_v1::TunnelPlan {
+                preset_endpoint_policy: Some(Default::default()),
+                ..Default::default()
+            }
+            .encode_to_vec(),
+            [0x82, 0x01, 0]
+        );
+        for (purpose, value) in [
+            (agent_v1::DirectEgressPurpose::PresetDns, 2),
+            (agent_v1::DirectEgressPurpose::PresetMasque, 3),
+        ] {
+            assert_eq!(
+                agent_v1::AcquireDirectEgressRequest {
+                    purpose: purpose as i32,
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+                [0x28, value]
+            );
+        }
+        assert_eq!(
+            agent_v1::AgentRequest {
+                payload: Some(
+                    agent_v1::agent_request::Payload::SetPresetEndpointCandidates(
+                        Default::default()
+                    )
+                ),
+                ..Default::default()
+            }
+            .encode_to_vec(),
+            [0x92, 0x02, 0]
+        );
+    }
+
+    #[test]
     fn network_settings_wire_numbers_are_append_only() {
         let save = v1::ControlRequest {
             request_id: String::new(),

@@ -106,11 +106,27 @@ internal data class AndroidVpnProfile(
                 parseNumericAddress(source.requiredString("endpoint_v6", 128), true) as Inet6Address
             val endpointSelection = source.optString("endpoint_selection", "custom")
             require(endpointSelection in setOf("automatic", "custom")) { "Invalid endpoint selection" }
+            val presetRegion = source.opt("endpoint_preset_region").takeUnless { it == JSONObject.NULL }
+            require(presetRegion == null || presetRegion in setOf("us", "de", "fi")) {
+                "Invalid endpoint preset region"
+            }
+            require(
+                presetRegion == null ||
+                    (endpointSelection == "custom" && ipPolicy in setOf("ipv6Only", "preferIpv6")),
+            ) {
+                "Endpoint presets require IPv6"
+            }
             val configuredDnsServers = listOf(dnsIpv4, dnsIpv6)
             val activeDnsServers = if (ordinaryEncryptedDns) emptyList() else configuredDnsServers
             if (endpointSelection == "custom") {
                 require(
-                    activeDnsServers.none { server -> server == endpointIpv4 || server == endpointIpv6 },
+                    activeDnsServers.none { server ->
+                        if (presetRegion != null) {
+                            ipPolicy == "preferIpv6" && server == endpointIpv4
+                        } else {
+                            server == endpointIpv4 || server == endpointIpv6
+                        }
+                    },
                 ) { "VPN DNS server cannot equal a protected MASQUE endpoint" }
             }
             // Rust hydrates registration-owned endpoints in Custom mode.

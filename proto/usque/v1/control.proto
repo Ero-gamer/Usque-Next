@@ -169,6 +169,7 @@ message EndpointSettings {
   uint32 port = 3;
   string sni = 4;
   EndpointSelection selection = 5;
+  string preset_region = 6;
 }
 
 message ProxySettings {
@@ -507,6 +508,7 @@ message Capabilities {
   bool routing_rules = 46;
   bool live_ads_rules = 47;
   repeated TlsFingerprint tls_fingerprints = 48;
+  bool endpoint_presets = 49;
 }
 
 message FrontendStatus {
@@ -541,6 +543,7 @@ message ConnectionSnapshot {
   VpnGateStatus vpn_gate = 21;
   ChainExitStatus chain_exit = 22;
   string ads_rule_revision = 23;
+  string endpoint_source = 24;
 }
 
 // No destinations, DNS content, connection IDs, or credential material.

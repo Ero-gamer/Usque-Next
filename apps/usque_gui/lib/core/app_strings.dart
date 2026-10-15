@@ -6,6 +6,7 @@ import 'l10n/ads.dart';
 import 'l10n/catalogs.dart';
 import 'l10n/chain.dart';
 import 'l10n/diagnostics.dart';
+import 'l10n/endpoint_presets.dart';
 import 'l10n/l4.dart';
 import 'l10n/network_quality.dart';
 import 'l10n/network_settings.dart';
@@ -54,6 +55,9 @@ class AppStrings {
   }
 
   String _raw(String key) {
+    final presets =
+        kEndpointPresetCatalogs[catalogId] ?? kEndpointPresetCatalogs['en']!;
+    if (presets.containsKey(key)) return presets[key]!;
     final tls =
         kTlsFingerprintCatalogs[catalogId] ?? kTlsFingerprintCatalogs['en']!;
     if (tls.containsKey(key)) return tls[key]!;
@@ -100,11 +104,18 @@ class AppStrings {
     'dns',
     'error_field',
     'password',
+    'endpoint_preset_fi',
+    'endpoint_preset_de',
+    'endpoint_preset_us',
   };
 
   @visibleForTesting
   static bool get debugCatalogsAreComplete {
-    if (!_featureTablesComplete(kAdsCatalogs, kAdsCatalogs['en']!) ||
+    if (!_featureTablesComplete(
+          kEndpointPresetCatalogs,
+          kEndpointPresetCatalogs['en']!,
+        ) ||
+        !_featureTablesComplete(kAdsCatalogs, kAdsCatalogs['en']!) ||
         !_featureTablesComplete(
           kTlsFingerprintCatalogs,
           kTlsFingerprintCatalogs['en']!,
@@ -217,6 +228,7 @@ class AppStrings {
     scan(kNetworkSettingsCatalogs, kNetworkSettingsEn);
     scan(kChainCatalogs, kChainEn);
     scan(kTlsFingerprintCatalogs, kTlsFingerprintCatalogs['en']!);
+    scan(kEndpointPresetCatalogs, kEndpointPresetCatalogs['en']!);
     for (final catalogEntry in kWindowsAdapterCleanupCatalogs.entries) {
       if (catalogEntry.key == 'en') {
         continue;

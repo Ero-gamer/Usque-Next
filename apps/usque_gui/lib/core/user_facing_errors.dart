@@ -52,6 +52,9 @@ String userFacingFailure(AppStrings strings, {String? code, String? details}) {
     'CONFIGURATION_INVALID' => 'diag_fix_review_configuration',
     'L4_UNSUPPORTED' => 'l4_unsupported',
     'AUTOMATIC_ENDPOINTS_UNSUPPORTED' => 'endpoint_unsupported',
+    'ENDPOINT_PRESETS_UNSUPPORTED' => 'endpoint_preset_unsupported',
+    'ENDPOINT_PRESET_REQUIRES_IPV6' => 'endpoint_preset_policy',
+    'ENDPOINT_PRESET_REQUIRES_CUSTOM' => 'endpoint_custom',
     'NETWORK_SETTINGS_UNSUPPORTED' ||
     'PROXY_AUTH_UNSUPPORTED' => 'settings_unsupported',
     'PROXY_AUTH_APPLY_FAILED' => 'settings_failed',

@@ -951,6 +951,7 @@ fn zero_trust_endpoint(enrollment: &AccountData) -> Result<EndpointSettings, Reg
         port: ZERO_TRUST_PORT,
         sni: ZERO_TRUST_SNI.to_owned(),
         selection: crate::EndpointSelection::Custom,
+        preset_region: None,
     };
     settings
         .validate()

@@ -128,6 +128,18 @@ impl MasqueTlsIdentity {
         usque_core::EndpointPool::from_entitlement(self.entitlement)
     }
 
+    pub fn endpoint_preset_tier(&self) -> Result<usque_core::EndpointPresetTier, TransportError> {
+        crate::endpoint_preset::tier(self)
+    }
+
+    /// Attaches credential-bound metadata after the secure loader validates
+    /// its binding to this identity. Never supply profile labels or UI input.
+    pub fn with_identity_metadata(mut self, metadata: usque_core::IdentityMetadata) -> Self {
+        self.provider = Some(metadata.provider);
+        self.entitlement = metadata.entitlement;
+        self
+    }
+
     /// Available only when the credential loader supplied an authenticated
     /// provider. Diagnostics must not derive L4 SNI from a saved profile label.
     pub fn l4_server_name(&self) -> Option<&'static str> {

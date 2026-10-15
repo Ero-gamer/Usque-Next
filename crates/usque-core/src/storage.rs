@@ -479,6 +479,10 @@ fn migrate_app_config(config: &mut AppConfig) {
         config.network.tls_fingerprint = crate::TlsFingerprint::Default;
         config.schema_version = 25;
     }
+    if config.schema_version < 26 {
+        config.network.endpoint.preset_region = None;
+        config.schema_version = 26;
+    }
 }
 
 #[cfg(not(windows))]
@@ -551,6 +555,30 @@ pub enum StoreError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn schema_25_migrates_without_a_preset_and_schema_26_preserves_region() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = super::ConfigStore::new(directory.path().join("config.json"));
+        let config = crate::AppConfig {
+            schema_version: 25,
+            ..Default::default()
+        };
+        let mut value = serde_json::to_value(&config).unwrap();
+        value["network"]["endpoint"]
+            .as_object_mut()
+            .unwrap()
+            .remove("preset_region");
+        std::fs::write(store.path(), serde_json::to_vec(&value).unwrap()).unwrap();
+        let mut loaded = store.load().unwrap();
+        assert_eq!(loaded.schema_version, crate::config::CURRENT_SCHEMA_VERSION);
+        assert_eq!(loaded.network.endpoint.preset_region, None);
+        loaded.network.endpoint.selection = crate::EndpointSelection::Custom;
+        loaded.network.endpoint.preset_region = Some(crate::EndpointPresetRegion::Fi);
+        loaded.network.ip_policy = crate::IpPolicy::Ipv6Only;
+        store.save(&loaded).unwrap();
+        assert_eq!(store.load().unwrap(), loaded);
+    }
+
     #[test]
     fn schema_24_migrates_with_default_fingerprint_and_persists_selection() {
         let directory = tempfile::tempdir().unwrap();
@@ -1079,6 +1107,7 @@ mod tests {
                 port: 443,
                 sni: "zt-masque.cloudflareclient.com".to_owned(),
                 selection: crate::EndpointSelection::Custom,
+                preset_region: None,
             },
             ..Profile::default()
         };
@@ -1327,6 +1356,7 @@ mod tests {
             port: 443,
             sni: "zt-masque.cloudflareclient.com".to_owned(),
             selection: crate::EndpointSelection::Custom,
+            preset_region: None,
         };
         fs::write(store.path(), serde_json::to_vec_pretty(&config).unwrap()).unwrap();
 

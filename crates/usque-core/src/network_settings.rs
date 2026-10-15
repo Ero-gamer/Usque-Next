@@ -24,6 +24,7 @@ macro_rules! network_fields {
             "endpoint.port" => endpoint.port,
             "endpoint.sni" => endpoint.sni,
             "endpoint.selection" => endpoint.selection,
+            "endpoint.preset_region" => endpoint.preset_region,
             "ip_policy" => ip_policy,
             "mtu" => mtu,
             "dns_mode" => dns_mode,
@@ -220,7 +221,11 @@ pub fn merge_patch(
     if managed {
         network.endpoint.ipv4 = config.network.endpoint.ipv4;
         network.endpoint.ipv6 = config.network.endpoint.ipv6;
-        network.endpoint.selection = config.network.endpoint.selection;
+        network.endpoint.selection = if network.endpoint.preset_region.is_some() {
+            crate::EndpointSelection::Custom
+        } else {
+            config.network.endpoint.selection
+        };
         if patch
             .changed_fields
             .iter()
@@ -239,6 +244,9 @@ pub fn merge_patch(
 }
 
 fn normalize(profile: &mut Profile) -> Result<(), SettingsError> {
+    if profile.endpoint.selection == crate::EndpointSelection::Automatic {
+        profile.endpoint.preset_region = None;
+    }
     if let Some(chain) = &profile.chain_exit {
         profile.vpn_gate.enabled =
             chain.enabled && chain.source == crate::chain_exit::ChainSource::VpnGate;
@@ -326,6 +334,140 @@ fn deferred_plan() -> ApplicationPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preset_region_is_shared_cold_and_preserves_managed_manual_fallback() {
+        let mut config = AppConfig::default();
+        let id = config.active_profile_id.unwrap();
+        let registered = crate::ManagedEndpointIps {
+            ipv4: "162.159.197.2".parse().unwrap(),
+            ipv6: "2606:4700:102::2".parse().unwrap(),
+        };
+        config
+            .set_managed_endpoint_ips(id, registered.clone())
+            .unwrap();
+        config
+            .identity_bindings
+            .insert(id, crate::IdentityProvider::zero_trust("example").unwrap());
+        let manual = crate::ManagedEndpointIps {
+            ipv4: "192.0.2.45".parse().unwrap(),
+            ipv6: "2001:db8::45".parse().unwrap(),
+        };
+        config.account_mut(id).unwrap().zero_trust_endpoint_override = Some(manual.clone());
+        let consumer_id = Uuid::new_v4();
+        config
+            .insert_account(consumer_id, "Consumer".into(), None)
+            .unwrap();
+        let shared_pair = (config.network.endpoint.ipv4, config.network.endpoint.ipv6);
+        let previous = config.active_profile().unwrap();
+        let mut edit = patch(&config, &["endpoint.preset_region", "ip_policy"]);
+        edit.values.endpoint.preset_region = Some(crate::EndpointPresetRegion::De);
+        edit.values.ip_policy = crate::IpPolicy::PreferIpv6;
+        let stored = merge_patch(&mut config, &edit).unwrap();
+        assert_eq!(stored.endpoint.ipv4, manual.ipv4);
+        assert_eq!(stored.endpoint.ipv6, manual.ipv6);
+        assert_eq!(
+            config.account(id).unwrap().zero_trust_endpoint_override,
+            Some(manual)
+        );
+        assert_eq!(
+            (config.network.endpoint.ipv4, config.network.endpoint.ipv6),
+            shared_pair
+        );
+        assert_eq!(
+            config.network.endpoint.selection,
+            crate::EndpointSelection::Custom
+        );
+        assert_eq!(
+            config
+                .runtime_profile(consumer_id)
+                .unwrap()
+                .endpoint
+                .preset_region,
+            Some(crate::EndpointPresetRegion::De)
+        );
+        assert_eq!(
+            plan_application(
+                Some(&previous),
+                &stored,
+                &edit.changed_fields,
+                ConnectionPhase::Connected,
+                true
+            )
+            .unwrap()
+            .class,
+            ReconfigureClass::ColdReconnect
+        );
+        config.validate().unwrap();
+        config
+            .set_managed_endpoint_ips(id, registered.clone())
+            .unwrap();
+        assert_eq!(
+            config.active_profile().unwrap().endpoint.preset_region,
+            Some(crate::EndpointPresetRegion::De)
+        );
+        assert_eq!(
+            config.active_profile().unwrap().endpoint.ipv4,
+            registered.ipv4
+        );
+        assert!(
+            config
+                .account(id)
+                .unwrap()
+                .zero_trust_endpoint_override
+                .is_none()
+        );
+        config.network.reset_user_defaults();
+        assert!(
+            config
+                .active_profile()
+                .unwrap()
+                .endpoint
+                .preset_region
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn preset_policy_validation_is_atomic_and_manual_and_auto_clear_selection() {
+        let mut config = AppConfig::default();
+        let mut edit = patch(
+            &config,
+            &["endpoint.preset_region", "endpoint.selection", "ip_policy"],
+        );
+        edit.values.endpoint.selection = crate::EndpointSelection::Custom;
+        edit.values.endpoint.preset_region = Some(crate::EndpointPresetRegion::Us);
+        let previous = config.clone();
+        assert!(matches!(
+            merge_patch(&mut config, &edit),
+            Err(SettingsError::Configuration(
+                crate::ConfigError::EndpointPresetRequiresIpv6
+            ))
+        ));
+        assert_eq!(config, previous);
+        edit.values.ip_policy = crate::IpPolicy::Ipv6Only;
+        merge_patch(&mut config, &edit).unwrap();
+        let mut manual = patch(&config, &["endpoint.preset_region"]);
+        manual.values.endpoint.preset_region = None;
+        assert!(
+            merge_patch(&mut config, &manual)
+                .unwrap()
+                .endpoint
+                .preset_region
+                .is_none()
+        );
+        merge_patch(&mut config, &edit).unwrap();
+        let mut automatic = patch(&config, &["endpoint.selection"]);
+        automatic.values.endpoint.selection = crate::EndpointSelection::Automatic;
+        assert!(
+            merge_patch(&mut config, &automatic)
+                .unwrap()
+                .endpoint
+                .preset_region
+                .is_none()
+        );
+        config.validate().unwrap();
+    }
 
     fn patch(config: &AppConfig, fields: &[&str]) -> NetworkSettingsPatch {
         NetworkSettingsPatch {

@@ -473,6 +473,7 @@ impl Supervisor {
                     let handle = sessions[index].tunnel.migration_handle();
                     if let Some(target) = observed
                         && handle.enabled()
+                        && self.profile.endpoint.preset_region.is_none()
                         && self.protector.endpoint_family_available(handle.endpoint())
                             != Some(false)
                     {
@@ -522,6 +523,9 @@ impl Supervisor {
                             match result {
                                 Ok(identity) if identity.provider == self.identity.provider && identity.assigned_ipv4 == self.identity.assigned_ipv4 && identity.assigned_ipv6 == self.identity.assigned_ipv6 => {
                                     if self.profile.endpoint.selection == usque_core::EndpointSelection::Automatic && identity.endpoint_pool() != self.identity.endpoint_pool() {
+                                        self.fail(TransportError::EndpointAssignmentChanged, reconnects); break;
+                                    }
+                                    if self.profile.endpoint.preset_region.is_some() && identity.endpoint_preset_tier().ok() != self.identity.endpoint_preset_tier().ok() {
                                         self.fail(TransportError::EndpointAssignmentChanged, reconnects); break;
                                     }
                                     self.identity = Arc::new(identity.with_fingerprint(self.profile.tls_fingerprint)); next_connect = Instant::now();
@@ -616,6 +620,9 @@ impl Setup {
                 .await
                 .map_err(|_| TransportError::TunnelClosed)?,
         );
+        if self.profile.endpoint.preset_region.is_some() {
+            return self.connect_preset(slot).await;
+        }
         if self.profile.endpoint.selection == usque_core::EndpointSelection::Automatic {
             let policy = usque_core::AutomaticEndpointPolicy::for_profile(
                 &self.profile,
@@ -683,6 +690,82 @@ impl Setup {
         }
     }
 
+    async fn connect_preset(
+        mut self,
+        slot: Arc<tokio::sync::OwnedSemaphorePermit>,
+    ) -> Result<Session, TransportError> {
+        let generation = self.protector.network_generation().unwrap_or_default();
+        let original_protector = self.protector.clone();
+        self.protector = crate::endpoint_preset::for_generation(self.protector.clone(), generation);
+        let setup = Arc::new(self);
+        crate::endpoint_preset::connect(
+            &setup.profile,
+            &setup.identity,
+            &original_protector,
+            &setup.telemetry,
+            |candidates, _| {
+                let setup = setup.clone();
+                let slot = slot.clone();
+                async move { setup.connect_preset_candidates(&candidates, slot).await }
+            },
+        )
+        .await
+    }
+
+    async fn connect_preset_candidates(
+        self: &Arc<Self>,
+        candidates: &[SocketAddr],
+        slot: Arc<tokio::sync::OwnedSemaphorePermit>,
+    ) -> Result<Session, TransportError> {
+        let generation = self.protector.network_generation().unwrap_or_default();
+        let mut last =
+            TransportError::AllEndpointsFailed("L4 endpoint preset cycle exhausted".into());
+        for batch in candidates.chunks(crate::endpoint_preset::BATCH_SIZE) {
+            let setup = self.clone();
+            let slot = slot.clone();
+            let targets = batch
+                .iter()
+                .copied()
+                .filter(|endpoint| {
+                    self.protector.endpoint_family_available(*endpoint) != Some(false)
+                })
+                .map(|endpoint| crate::endpoint_race::RaceTarget {
+                    endpoint,
+                    delay: Duration::ZERO,
+                })
+                .collect();
+            let result =
+                crate::endpoint_race::race_batch(targets, None, move |endpoint, cancellation| {
+                    let setup = setup.clone();
+                    let slot = slot.clone();
+                    async move {
+                        setup
+                            .candidate_with_cancellation(endpoint, slot, cancellation)
+                            .await
+                    }
+                })
+                .await;
+            if self.protector.network_generation().unwrap_or_default() != generation {
+                if let Ok(session) = result {
+                    crate::endpoint_race::RaceConnection::shutdown(session).await;
+                }
+                return Err(TransportError::UnderlyingNetworkChanged);
+            }
+            match result {
+                Ok(session) => return Ok(session),
+                Err(error)
+                    if crate::recovery_policy::RecoveryDecision::for_failure(
+                        &error.failure(Some(Transport::Http3), None),
+                    ) != crate::recovery_policy::RecoveryDecision::Retry =>
+                {
+                    return Err(error);
+                }
+                Err(error) => last = error,
+            }
+        }
+        Err(last)
+    }
+
     async fn candidate_with_cancellation(
         &self,
         endpoint: SocketAddr,
@@ -709,7 +792,9 @@ impl Setup {
             self.changed.clone(),
         );
         actor.session_slot = Some(slot);
-        if self.profile.endpoint.selection == usque_core::EndpointSelection::Automatic {
+        if self.profile.endpoint.selection == usque_core::EndpointSelection::Automatic
+            || self.profile.endpoint.preset_region.is_some()
+        {
             actor.limit_startup(startup_slot);
         } else {
             actor.startup_slot = Some(Arc::new(startup_slot));

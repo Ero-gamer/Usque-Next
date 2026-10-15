@@ -8,10 +8,10 @@ use usque_core::{DirectDnsMode, DirectDnsSettings, IpPolicy, Profile};
 
 use crate::{
     DirectDnsError, DirectDnsQueryContext, DirectDnsResolver, MasqueTlsIdentity,
-    NetworkQualityTelemetry, SocketProtector,
+    NetworkQualityTelemetry, SocketProtector, TransportError,
 };
 
-pub(crate) const PROBE_IO_TIMEOUT: Duration = Duration::from_millis(3_800);
+pub const PROBE_IO_TIMEOUT: Duration = Duration::from_millis(3_800);
 
 /// Allowlisted results only, never remote errors or identifying data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,6 +22,36 @@ pub enum NetworkProbeResult {
     TimedOut,
     Cancelled,
     NetworkChanged,
+}
+
+/// Retry eligibility is internal to the probe runner. The public diagnostic
+/// contract intentionally keeps the same compact, allowlisted result codes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum H3ProbeTerminal {
+    PinMismatch,
+    Identity,
+    Protection,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum H3ProbeOutcome {
+    Complete(NetworkProbeResult),
+    Terminal(H3ProbeTerminal),
+}
+
+impl H3ProbeOutcome {
+    pub(crate) fn public_result(self) -> NetworkProbeResult {
+        match self {
+            Self::Complete(result) => result,
+            Self::Terminal(_) => NetworkProbeResult::Failed,
+        }
+    }
+}
+
+impl From<NetworkProbeResult> for H3ProbeOutcome {
+    fn from(result: NetworkProbeResult) -> Self {
+        Self::Complete(result)
+    }
 }
 
 pub async fn probe_encrypted_dns(
@@ -102,12 +132,19 @@ pub async fn probe_h3_handshake(
     protector: Arc<dyn SocketProtector>,
     cancellation: CancellationToken,
 ) -> NetworkProbeResult {
-    crate::h3::diagnostic::handshake(endpoint, sni, identity, protector, cancellation).await
+    crate::h3::diagnostic::handshake(endpoint, sni, identity, protector, cancellation)
+        .await
+        .public_result()
 }
 
 /// The same family preference and forced-family policy as normal connection
 /// selection. No resolver lookup or endpoint discovery is performed.
 pub fn h3_probe_endpoints(profile: &Profile) -> Vec<SocketAddr> {
+    // Preset discovery requires authenticated tier and physical DNS. This
+    // synchronous diagnostic must never probe the dormant manual IPv6 field.
+    if profile.endpoint.preset_region.is_some() {
+        return Vec::new();
+    }
     let (v4, v6) = if profile.endpoint.selection == usque_core::EndpointSelection::Automatic {
         // Diagnostics stay bounded to one common endpoint per family. This
         // pair is eligible for both Free and Plus authenticated identities.
@@ -128,6 +165,40 @@ pub fn h3_probe_endpoints(profile: &Profile) -> Vec<SocketAddr> {
         IpPolicy::PreferIpv4 => vec![v4, v6],
         IpPolicy::Auto | IpPolicy::PreferIpv6 => vec![v6, v4],
     }
+}
+
+/// Preset-aware discovery with the same authenticated tier and physical DNS
+/// authorization as a connection. No tunnel is constructed.
+pub async fn h3_probe_endpoints_resolved(
+    profile: &Profile,
+    identity: &MasqueTlsIdentity,
+    protector: Arc<dyn SocketProtector>,
+    cancellation: CancellationToken,
+) -> Result<Vec<SocketAddr>, NetworkProbeResult> {
+    if profile.endpoint.preset_region.is_none() {
+        return Ok(h3_probe_endpoints(profile));
+    }
+    let generation = protector.network_generation().unwrap_or_default();
+    let resolution = tokio::select! {
+        biased;
+        _ = cancellation.cancelled() => return Err(NetworkProbeResult::Cancelled),
+        result = crate::endpoint_preset::resolve(profile, identity, &protector) => result,
+    };
+    if protector.network_generation().unwrap_or_default() != generation {
+        return Err(NetworkProbeResult::NetworkChanged);
+    }
+    let mut endpoints = match resolution {
+        Ok(resolved) => resolved.candidates.into_iter().take(1).collect::<Vec<_>>(),
+        Err(error) if crate::endpoint_preset::may_fallback(profile, &error) => Vec::new(),
+        Err(TransportError::UnderlyingNetworkChanged) => {
+            return Err(NetworkProbeResult::NetworkChanged);
+        }
+        Err(_) => return Err(NetworkProbeResult::Failed),
+    };
+    if profile.ip_policy == IpPolicy::PreferIpv6 {
+        endpoints.push(profile.endpoint.ipv4_socket());
+    }
+    Ok(endpoints)
 }
 
 /// Serial, at-most-two-family handshake checks within one 3.8 second deadline.
@@ -158,12 +229,18 @@ pub async fn probe_h3_handshake_candidates(
         let cancellation = cancellation.clone();
         async move {
             if protector.network_generation() != generation {
-                return NetworkProbeResult::NetworkChanged;
+                return NetworkProbeResult::NetworkChanged.into();
             }
-            let result =
-                probe_h3_handshake(endpoint, sni, identity, protector.clone(), cancellation).await;
+            let result = crate::h3::diagnostic::handshake(
+                endpoint,
+                sni,
+                identity,
+                protector.clone(),
+                cancellation,
+            )
+            .await;
             if protector.network_generation() != generation {
-                NetworkProbeResult::NetworkChanged
+                NetworkProbeResult::NetworkChanged.into()
             } else {
                 result
             }
@@ -179,7 +256,7 @@ async fn run_h3_candidates<F, Fut>(
 ) -> NetworkProbeResult
 where
     F: FnMut(SocketAddr) -> Fut,
-    Fut: Future<Output = NetworkProbeResult>,
+    Fut: Future<Output = H3ProbeOutcome>,
 {
     let started = Instant::now();
     let deadline = started + PROBE_IO_TIMEOUT;
@@ -196,8 +273,12 @@ where
         let attempt_deadline = now + remaining / (endpoints.len() - index) as u32;
         let outcome = tokio::select! {
             biased;
-            _ = cancellation.cancelled() => NetworkProbeResult::Cancelled,
-            result = timeout_at(attempt_deadline, probe(endpoint)) => result.unwrap_or(NetworkProbeResult::TimedOut),
+            _ = cancellation.cancelled() => NetworkProbeResult::Cancelled.into(),
+            result = timeout_at(attempt_deadline, probe(endpoint)) => result.unwrap_or(NetworkProbeResult::TimedOut.into()),
+        };
+        let outcome = match outcome {
+            H3ProbeOutcome::Complete(outcome) => outcome,
+            H3ProbeOutcome::Terminal(_) => return NetworkProbeResult::Failed,
         };
         match outcome {
             NetworkProbeResult::Passed { .. } => {
@@ -268,7 +349,7 @@ mod tests {
                 if endpoint.is_ipv6() {
                     std::future::pending().await
                 } else {
-                    NetworkProbeResult::Passed { milliseconds: 0 }
+                    NetworkProbeResult::Passed { milliseconds: 0 }.into()
                 }
             }
         })
@@ -280,6 +361,48 @@ mod tests {
             }
         );
         assert_eq!(active.load(Ordering::Acquire), 0);
+    }
+
+    #[tokio::test]
+    async fn terminal_ipv6_handshake_never_becomes_a_successful_ipv4_diagnosis() {
+        let endpoints = [
+            "[2001:db8::8]:443".parse().unwrap(),
+            "192.0.2.8:443".parse().unwrap(),
+        ];
+        for terminal in [
+            H3ProbeTerminal::PinMismatch,
+            H3ProbeTerminal::Identity,
+            H3ProbeTerminal::Protection,
+        ] {
+            let calls = Arc::new(AtomicUsize::new(0));
+            let active = Arc::new(AtomicUsize::new(0));
+            let result = run_h3_candidates(&endpoints, CancellationToken::new(), |endpoint| {
+                let calls = calls.clone();
+                let active = active.clone();
+                async move {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    assert_eq!(active.fetch_add(1, Ordering::SeqCst), 0);
+                    let _lease = ActiveProbe(active);
+                    if endpoint.is_ipv6() {
+                        H3ProbeOutcome::Terminal(terminal)
+                    } else {
+                        NetworkProbeResult::Passed { milliseconds: 0 }.into()
+                    }
+                }
+            })
+            .await;
+            assert_eq!(result, NetworkProbeResult::Failed, "{terminal:?}");
+            assert_eq!(
+                calls.load(Ordering::SeqCst),
+                1,
+                "{terminal:?} must stop before IPv4"
+            );
+            assert_eq!(
+                active.load(Ordering::SeqCst),
+                0,
+                "failed candidate releases its lease"
+            );
+        }
     }
 
     #[tokio::test(start_paused = true)]

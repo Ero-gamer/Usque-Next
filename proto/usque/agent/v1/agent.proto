@@ -67,6 +67,8 @@ message AgentCapabilities {
   bool automatic_endpoint_leases = 17;
   // Durable protection across an authenticated operation replacement.
   bool protected_tunnel_replacement = 18;
+  // Bounded, generation-scoped preset DNS and exact MASQUE candidate leases.
+  bool endpoint_preset_leases = 19;
 }
 
 enum AutomaticEndpointPool {
@@ -83,6 +85,17 @@ message AutomaticEndpointPolicy {
   bool ipv6 = 4;
   bool tcp = 5;
   bool udp = 6;
+}
+
+// Only an exact hostname from the built-in directory is accepted. Numeric
+// observation anchors in TunnelPlan do not authorize preset data traffic.
+message PresetEndpointPolicy {
+  string hostname = 1;
+  uint32 port = 2;
+  // Empty for IPv6-only; otherwise the retained numeric IPv4 socket address.
+  string ipv4_fallback = 3;
+  bool tcp = 4;
+  bool udp = 5;
 }
 
 message TunnelPlan {
@@ -110,6 +123,16 @@ message TunnelPlan {
   // Prepare only bootstrap protection. Commit requires FinalizeTunnel first.
   bool defer_network_configuration = 14;
   AutomaticEndpointPolicy automatic_endpoint_policy = 15;
+  PresetEndpointPolicy preset_endpoint_policy = 16;
+}
+
+// Replaces only this operation's volatile DNS-derived authorization. It is
+// invalidated by physical-network generation changes and operation cleanup.
+message SetPresetEndpointCandidatesRequest {
+  string operation_id = 1;
+  string hostname = 2;
+  uint64 expected_generation = 3;
+  repeated string ipv6_candidates = 4;
 }
 
 message FinalizeTunnelRequest {
@@ -488,6 +511,8 @@ enum DirectEgressPurpose {
   // Zero preserves legacy generic direct-egress behavior.
   DIRECT_EGRESS_PURPOSE_UNSPECIFIED = 0;
   DIRECT_EGRESS_PURPOSE_AUTOMATIC_MASQUE = 1;
+  DIRECT_EGRESS_PURPOSE_PRESET_DNS = 2;
+  DIRECT_EGRESS_PURPOSE_PRESET_MASQUE = 3;
 }
 
 message AcquireDirectEgressRequest {
@@ -577,6 +602,7 @@ message AgentRequest {
     ReleaseDeviceLeaseRequest release_device_lease = 31;
     ReplaceTunnelRequest replace_tunnel = 32;
     AbortReplacementRequest abort_replacement = 33;
+    SetPresetEndpointCandidatesRequest set_preset_endpoint_candidates = 34;
   }
 }
 

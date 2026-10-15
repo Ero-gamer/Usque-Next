@@ -64,6 +64,18 @@ class TransientCapabilities extends FakeEngineClient {
   }
 }
 
+class PresetTransientCapabilities extends TransientCapabilities {
+  @override
+  Future<EngineCapabilities?> getCapabilities() async {
+    await super.getCapabilities();
+    return const EngineCapabilities(
+      networkSettingsApplication: true,
+      automaticEndpoints: true,
+      endpointPresets: true,
+    );
+  }
+}
+
 class HeldIdentityMutation extends FakeEngineClient {
   final entered = Completer<void>();
   final release = Completer<void>();
@@ -187,6 +199,53 @@ void main() {
     expect(app.snapshot.phase, ConnectionPhase.connected);
     expect(app.lastError, isNull);
   });
+
+  for (final zeroTrust in [false, true]) {
+    test(
+      'saved preset startup retries capability failures for ${zeroTrust ? 'Zero Trust' : 'Free'}',
+      () async {
+        final engine = PresetTransientCapabilities()
+          ..legacyProfilesImported = true
+          ..storedProfiles = [
+            UsqueProfile.defaultProfile().copyWith(
+              autoConnect: true,
+              endpointSelection: EndpointSelection.custom,
+              endpointPresetRegion: EndpointPresetRegion.fi,
+              ipPolicy: IpPolicy.ipv6Only,
+            ),
+          ]
+          ..storedIdentityStatuses = {
+            UsqueProfile.defaultProfileId: ProfileIdentityStatus(
+              state: ProfileIdentityState.ready,
+              provider: zeroTrust
+                  ? IdentityProvider.zeroTrust
+                  : IdentityProvider.consumer,
+              licenseState: zeroTrust
+                  ? LicenseState.notApplicable
+                  : LicenseState.free,
+            ),
+          };
+        final app = AppController(engine);
+        addTearDown(app.dispose);
+        await app.initialize();
+        expect(engine.attempts, 1);
+        expect(engine.calls, isNot(contains('connect')));
+        expect(app.lastError, isNull);
+        expect(app.activeProfile.endpointPresetRegion, EndpointPresetRegion.fi);
+        await engine.connected.future.timeout(const Duration(seconds: 8));
+        await Future<void>.delayed(Duration.zero);
+        expect(engine.attempts, 3);
+        expect(engine.calls.where((call) => call == 'connect'), hasLength(1));
+        expect(
+          engine.lastConnectedProfile?.endpointPresetRegion,
+          EndpointPresetRegion.fi,
+        );
+        expect(engine.lastConnectedProfile?.ipPolicy, IpPolicy.ipv6Only);
+        expect(app.snapshot.phase, ConnectionPhase.connected);
+        expect(app.lastError, isNull);
+      },
+    );
+  }
 
   test('user disconnect survives Automatic capability recovery', () async {
     final engine = TransientCapabilities()

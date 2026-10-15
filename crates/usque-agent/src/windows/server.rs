@@ -146,6 +146,8 @@ const MAX_AUTOMATIC_ENDPOINT_LEASES: usize = 16;
 enum EgressPurpose {
     Generic,
     AutomaticMasque,
+    PresetDns,
+    PresetMasque,
 }
 
 impl EgressPurpose {
@@ -153,6 +155,8 @@ impl EgressPurpose {
         match value {
             0 => Ok(Self::Generic),
             1 => Ok(Self::AutomaticMasque),
+            2 => Ok(Self::PresetDns),
+            3 => Ok(Self::PresetMasque),
             _ => Err(ServiceError::DirectEgressTarget),
         }
     }
@@ -166,25 +170,55 @@ struct DirectEgressEntry {
 #[derive(Default)]
 struct DirectEgressRegistry {
     entries: HashMap<DirectEgressKey, DirectEgressEntry>,
+    preset_candidates: HashMap<Uuid, PresetCandidates>,
+}
+
+struct PresetCandidates {
+    generation: u64,
+    endpoints: Vec<SocketAddr>,
+}
+
+impl PresetCandidates {
+    fn permits(
+        &self,
+        policy: &crate::plan::PresetEndpointPolicy,
+        endpoint: SocketAddr,
+        protocol: u8,
+        generation: u64,
+    ) -> bool {
+        generation != 0
+            && self.generation == generation
+            && policy.permits_protocol(protocol)
+            && (self.endpoints.contains(&endpoint) || policy.ipv4_fallback == Some(endpoint))
+    }
 }
 
 impl DirectEgressRegistry {
     fn has_capacity(&self, key: DirectEgressKey) -> bool {
         self.entries.contains_key(&key)
             || self.entries.len() < MAX_DYNAMIC_DIRECT_TARGETS
-                && (key.purpose != EgressPurpose::AutomaticMasque
-                    || self
-                        .entries
-                        .keys()
-                        .filter(|entry| entry.purpose == EgressPurpose::AutomaticMasque)
-                        .count()
-                        < MAX_AUTOMATIC_ENDPOINT_LEASES)
+                && (!matches!(
+                    key.purpose,
+                    EgressPurpose::AutomaticMasque | EgressPurpose::PresetMasque
+                ) || self
+                    .entries
+                    .keys()
+                    .filter(|entry| {
+                        matches!(
+                            entry.purpose,
+                            EgressPurpose::AutomaticMasque | EgressPurpose::PresetMasque
+                        )
+                    })
+                    .count()
+                    < MAX_AUTOMATIC_ENDPOINT_LEASES)
     }
     fn invalidate_before(&mut self, generation: u64) {
         // Snapshot invalidation can run after a concurrent acquisition for
         // this or a newer generation. Never revoke that newer authorization.
         self.entries
             .retain(|key, _| key.network_generation >= generation);
+        self.preset_candidates
+            .retain(|_, value| value.generation >= generation);
     }
 
     fn release(&mut self, key: DirectEgressKey) {
@@ -921,7 +955,12 @@ where
         let journal = self.state().await;
         let plan = validate_direct_context(&journal, operation_id, caller, true)?;
         if journal.replacement_pending()
-            && purpose != EgressPurpose::AutomaticMasque
+            && !matches!(
+                purpose,
+                EgressPurpose::AutomaticMasque
+                    | EgressPurpose::PresetDns
+                    | EgressPurpose::PresetMasque
+            )
             && !wfp::is_bootstrap_endpoint(plan, remote, protocol)
         {
             return Err(ServiceError::DirectEgressNotReady);
@@ -931,17 +970,32 @@ where
         }
         let physical = self.physical_network_info(operation_id, caller).await?;
         validate_expected_generation(expected_generation, physical.generation)?;
-        let family_mask = if remote.is_ipv4() { 1 } else { 2 };
-        let interface = physical
-            .interfaces
-            .iter()
-            .find(|interface| interface.address_family_mask & family_mask != 0)
-            .ok_or_else(|| {
-                ServiceError::PhysicalNetwork(format!(
-                    "no verified physical interface supports {}",
-                    if remote.is_ipv6() { "IPv6" } else { "IPv4" }
-                ))
-            })?;
+        if matches!(
+            purpose,
+            EgressPurpose::PresetDns | EgressPurpose::PresetMasque
+        ) {
+            let policy = plan
+                .preset_endpoint_policy
+                .as_ref()
+                .ok_or(ServiceError::DirectEgressTarget)?;
+            validate_preset_endpoint_ready(&journal, expected_generation)?;
+            if purpose == EgressPurpose::PresetDns {
+                if remote.port() != 53 {
+                    return Err(ServiceError::DirectEgressTarget);
+                }
+            } else {
+                let registry = self.direct_egress.lock().await;
+                let candidates = registry
+                    .preset_candidates
+                    .get(&operation_id)
+                    .filter(|set| set.generation == expected_generation)
+                    .ok_or(ServiceError::DirectEgressNotReady)?;
+                if !candidates.permits(policy, remote, protocol, expected_generation) {
+                    return Err(ServiceError::DirectEgressTarget);
+                }
+            }
+        }
+        let interface = select_direct_egress_interface(&physical, remote, purpose)?;
         let interface_luid = interface.interface_luid;
         let key = DirectEgressKey {
             operation_id,
@@ -1019,7 +1073,63 @@ where
     }
 
     async fn clear_direct_egress(&self) {
-        self.direct_egress.lock().await.entries.clear();
+        let mut registry = self.direct_egress.lock().await;
+        registry.entries.clear();
+        registry.preset_candidates.clear();
+    }
+
+    async fn set_preset_endpoint_candidates(
+        &self,
+        request: agent_v1::SetPresetEndpointCandidatesRequest,
+        caller: &AuthenticatedCaller,
+    ) -> Result<(), ServiceError> {
+        let _gate = self.mutation_gate.lock().await;
+        let operation_id = parse_operation_id(&request.operation_id)?;
+        let journal = self.state().await;
+        let plan = validate_direct_context(&journal, operation_id, caller, true)?;
+        let policy = plan
+            .preset_endpoint_policy
+            .as_ref()
+            .ok_or(ServiceError::DirectEgressTarget)?;
+        if self.stopping.load(Ordering::Acquire) || request.hostname != policy.hostname {
+            return Err(ServiceError::DirectEgressTarget);
+        }
+        validate_preset_endpoint_ready(&journal, request.expected_generation)?;
+        let endpoints = request
+            .ipv6_candidates
+            .iter()
+            .map(|value| {
+                value
+                    .parse::<SocketAddr>()
+                    .map_err(|_| ServiceError::DirectEgressTarget)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        policy
+            .validate_candidates(&endpoints)
+            .map_err(|_| ServiceError::DirectEgressTarget)?;
+        if endpoints
+            .iter()
+            .any(|endpoint| plan.dns_servers.contains(&endpoint.ip()))
+        {
+            return Err(ServiceError::DirectEgressTarget);
+        }
+        let physical = self.physical_network_info(operation_id, caller).await?;
+        validate_expected_generation(request.expected_generation, physical.generation)?;
+        let mut registry = self.direct_egress.lock().await;
+        validate_expected_generation(
+            request.expected_generation,
+            self.physical_generation.lock().await.generation,
+        )?;
+        // Updating admission does not revoke independently owned live socket
+        // leases. They close with their sockets; only new leases use this set.
+        registry.preset_candidates.insert(
+            operation_id,
+            PresetCandidates {
+                generation: request.expected_generation,
+                endpoints,
+            },
+        );
+        Ok(())
     }
 
     pub async fn reconcile_removed_adapter_dependencies(
@@ -1229,6 +1339,12 @@ where
                         .await
                         .map_err(|error| (request_id.clone(), error))?,
                 )
+            }
+            agent_request::Payload::SetPresetEndpointCandidates(request) => {
+                self.set_preset_endpoint_candidates(request, caller)
+                    .await
+                    .map_err(|error| (request_id.clone(), error))?;
+                agent_response::Payload::Empty(agent_v1::Empty {})
             }
             agent_request::Payload::AcquireDirectEgress(request) => {
                 let operation_id = parse_operation_id(&request.operation_id)
@@ -2156,6 +2272,23 @@ fn acquire_egress_permit_for_purpose<Permit>(
     if !matches!(phase, RecoveryPhase::Prepared | RecoveryPhase::Active) {
         return Err(ServiceError::DirectEgressState);
     }
+    if matches!(
+        purpose,
+        EgressPurpose::PresetDns | EgressPurpose::PresetMasque
+    ) {
+        let policy = plan
+            .preset_endpoint_policy
+            .as_ref()
+            .ok_or(ServiceError::DirectEgressTarget)?;
+        if purpose == EgressPurpose::PresetDns && remote.port() != 53
+            || purpose == EgressPurpose::PresetMasque && !policy.permits_protocol(protocol)
+        {
+            return Err(ServiceError::DirectEgressTarget);
+        }
+        // Exact DNS/candidate membership, ownership and generation were
+        // checked before this call. These permits never become bootstrap rules.
+        return install().map(Some);
+    }
     if purpose == EgressPurpose::AutomaticMasque {
         let transport = match protocol {
             6 => usque_core::Transport::Http2,
@@ -2185,6 +2318,68 @@ fn acquire_egress_permit_for_purpose<Permit>(
     } else {
         Ok(None)
     }
+}
+
+fn validate_preset_endpoint_ready(
+    journal: &RecoveryJournal,
+    generation: u64,
+) -> Result<(), ServiceError> {
+    if generation == 0
+        || journal
+            .plan
+            .as_ref()
+            .is_none_or(|plan| plan.preset_endpoint_policy.is_none())
+    {
+        return Err(ServiceError::DirectEgressTarget);
+    }
+    if !journal
+        .steps
+        .iter()
+        .any(|step| step.kind == MutationKind::WfpMetadata && step.state == MutationState::Applied)
+    {
+        return Err(ServiceError::DirectEgressNotReady);
+    }
+    Ok(())
+}
+
+fn select_direct_egress_interface(
+    physical: &agent_v1::PhysicalNetworkInfo,
+    remote: SocketAddr,
+    purpose: EgressPurpose,
+) -> Result<&agent_v1::PhysicalInterface, ServiceError> {
+    let family_mask = if remote.is_ipv4() { 1 } else { 2 };
+    physical
+        .interfaces
+        .iter()
+        .find(|interface| {
+            if interface.address_family_mask & family_mask == 0 {
+                return false;
+            }
+            if purpose != EgressPurpose::PresetDns {
+                return true;
+            }
+            if let SocketAddr::V6(address) = remote
+                && (address.ip().is_unicast_link_local() && address.scope_id() == 0
+                    || address.scope_id() != 0 && address.scope_id() != interface.interface_index)
+            {
+                return false;
+            }
+            interface.dns_servers.iter().any(|server| {
+                server
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|ip| ip == remote.ip())
+            })
+        })
+        .ok_or_else(|| {
+            if purpose == EgressPurpose::PresetDns {
+                ServiceError::DirectEgressTarget
+            } else {
+                ServiceError::PhysicalNetwork(format!(
+                    "no verified physical interface supports {}",
+                    if remote.is_ipv6() { "IPv6" } else { "IPv4" }
+                ))
+            }
+        })
 }
 
 fn validate_direct_context<'a>(
@@ -2763,6 +2958,129 @@ mod tests {
     }
 
     #[test]
+    fn preset_candidates_are_exact_generation_scoped_and_never_static_bootstrap() {
+        let mut plan = egress_plan();
+        let policy = crate::plan::PresetEndpointPolicy {
+            hostname: "us.v6.free.orangesky.dev".into(),
+            port: 443,
+            ipv4_fallback: Some("192.0.2.1:443".parse().unwrap()),
+            tcp: false,
+            udp: true,
+        };
+        let endpoint = "[2001:db8::42]:443".parse().unwrap();
+        let candidates = PresetCandidates {
+            generation: 42,
+            endpoints: vec![endpoint],
+        };
+        assert!(candidates.permits(&policy, endpoint, 17, 42));
+        assert!(candidates.permits(&policy, policy.ipv4_fallback.unwrap(), 17, 42));
+        assert!(!candidates.permits(&policy, endpoint, 6, 42));
+        assert!(!candidates.permits(&policy, endpoint, 17, 43));
+        assert!(!candidates.permits(&policy, "[2001:db8::43]:443".parse().unwrap(), 17, 42));
+        plan.preset_endpoint_policy = Some(policy);
+        assert!(!wfp::is_bootstrap_endpoint(&plan, plan.endpoint, 17));
+        assert!(
+            acquire_egress_permit::<()>(
+                &plan,
+                RecoveryPhase::Prepared,
+                plan.endpoint,
+                17,
+                || panic!("observation anchors never authorize preset sockets")
+            )
+            .is_err()
+        );
+        for phase in [
+            RecoveryPhase::Clean,
+            RecoveryPhase::Recovering,
+            RecoveryPhase::RecoveryRequired,
+        ] {
+            assert!(
+                acquire_egress_permit_for_purpose::<()>(
+                    &plan,
+                    phase,
+                    endpoint,
+                    17,
+                    EgressPurpose::PresetMasque,
+                    || panic!("closed phase cannot install permit")
+                )
+                .is_err()
+            );
+        }
+        let operation = Uuid::new_v4();
+        let mut registry = DirectEgressRegistry::default();
+        registry.preset_candidates.insert(operation, candidates);
+        registry.invalidate_before(43);
+        assert!(!registry.preset_candidates.contains_key(&operation));
+    }
+
+    #[test]
+    fn preset_dns_selects_its_owning_interface_and_exact_link_local_scope() {
+        let physical = agent_v1::PhysicalNetworkInfo {
+            generation: 42,
+            interfaces: vec![
+                agent_v1::PhysicalInterface {
+                    interface_luid: 111,
+                    interface_index: 11,
+                    address_family_mask: 3,
+                    dns_servers: vec!["1.1.1.1".into(), "fe80::53".into()],
+                },
+                agent_v1::PhysicalInterface {
+                    interface_luid: 222,
+                    interface_index: 22,
+                    address_family_mask: 3,
+                    dns_servers: vec!["9.9.9.9".into(), "fe80::53".into()],
+                },
+            ],
+        };
+        for (target, expected_luid) in [
+            ("9.9.9.9:53", 222),
+            ("[fe80::53%22]:53", 222),
+            ("[fe80::53%11]:53", 111),
+        ] {
+            assert_eq!(
+                select_direct_egress_interface(
+                    &physical,
+                    target.parse().unwrap(),
+                    EgressPurpose::PresetDns
+                )
+                .unwrap()
+                .interface_luid,
+                expected_luid,
+            );
+        }
+        for target in ["[fe80::53]:53", "[fe80::53%33]:53", "192.0.2.53:53"] {
+            assert!(
+                select_direct_egress_interface(
+                    &physical,
+                    target.parse().unwrap(),
+                    EgressPurpose::PresetDns
+                )
+                .is_err()
+            );
+        }
+        assert_eq!(
+            select_direct_egress_interface(
+                &physical,
+                "9.9.9.9:443".parse().unwrap(),
+                EgressPurpose::Generic
+            )
+            .unwrap()
+            .interface_luid,
+            111,
+        );
+        let mut unavailable = physical;
+        unavailable.interfaces[1].address_family_mask = 1;
+        assert!(
+            select_direct_egress_interface(
+                &unavailable,
+                "[fe80::53%22]:53".parse().unwrap(),
+                EgressPurpose::PresetDns
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn automatic_egress_is_exact_ready_and_distinct_from_generic() {
         let mut plan = egress_plan();
         plan.automatic_endpoint_policy = Some(usque_core::AutomaticEndpointPolicy {
@@ -2824,7 +3142,7 @@ mod tests {
                 );
             }
         }
-        assert!(EgressPurpose::from_proto(2).is_err());
+        assert!(EgressPurpose::from_proto(4).is_err());
         let mut journal = RecoveryJournal::clean(1);
         journal.phase = RecoveryPhase::Prepared;
         journal.plan = Some(plan);
@@ -3817,6 +4135,7 @@ mod tests {
                 reusable_tun_device: true,
                 automatic_endpoint_leases: false,
                 protected_tunnel_replacement: false,
+                endpoint_preset_leases: false,
                 wintun: false,
                 wfp_kill_switch: false,
                 interface_addresses: false,

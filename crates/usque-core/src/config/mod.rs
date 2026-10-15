@@ -18,6 +18,7 @@ mod account;
 mod bypass_tests;
 mod congestion;
 mod data_plane;
+mod endpoint_preset;
 mod initial_identity;
 mod network;
 mod routing;
@@ -28,6 +29,7 @@ mod warp_dns_tests;
 pub use account::{Account, ManagedEndpointIps};
 pub use congestion::CongestionControlAlgorithm;
 pub use data_plane::{CONSUMER_L4_SNI, DataPlaneMode, ZERO_TRUST_L4_SNI, l4_server_name};
+pub use endpoint_preset::{EndpointPresetRegion, EndpointPresetTier};
 pub use initial_identity::{InitialIdentityOperation, InitialIdentityPhase};
 pub use network::SharedNetworkSettings;
 pub use routing::{
@@ -35,7 +37,7 @@ pub use routing::{
 };
 pub use tls_fingerprint::TlsFingerprint;
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 25;
+pub const CURRENT_SCHEMA_VERSION: u32 = 26;
 /// Vault namespace for device-wide proxy-listener secrets. Never a profile id.
 pub const SHARED_NETWORK_SECRET_ID: Uuid =
     Uuid::from_u128(0x9f1c_6b20_5a7e_4d3a_9c11_00c0_ffee_0001);
@@ -208,7 +210,11 @@ impl AppConfig {
                 if keep_shared_endpoint_ips {
                     network.endpoint.ipv4 = self.network.endpoint.ipv4;
                     network.endpoint.ipv6 = self.network.endpoint.ipv6;
-                    network.endpoint.selection = self.network.endpoint.selection;
+                    network.endpoint.selection = if network.endpoint.preset_region.is_some() {
+                        EndpointSelection::Custom
+                    } else {
+                        self.network.endpoint.selection
+                    };
                 }
                 if keep_username {
                     network.proxy.auth_username = self.network.proxy.auth_username.clone();
@@ -586,6 +592,11 @@ impl Profile {
             return Err(ConfigError::InvalidProfileName);
         }
         self.endpoint.validate()?;
+        if self.endpoint.preset_region.is_some()
+            && !matches!(self.ip_policy, IpPolicy::Ipv6Only | IpPolicy::PreferIpv6)
+        {
+            return Err(ConfigError::EndpointPresetRequiresIpv6);
+        }
 
         if let Some(chain) = &self.chain_exit {
             chain
@@ -1164,6 +1175,8 @@ pub struct EndpointSettings {
     pub sni: String,
     #[serde(default)]
     pub selection: EndpointSelection,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset_region: Option<EndpointPresetRegion>,
 }
 
 impl Default for EndpointSettings {
@@ -1174,6 +1187,7 @@ impl Default for EndpointSettings {
             port: DEFAULT_PORT,
             sni: DEFAULT_SNI.to_owned(),
             selection: EndpointSelection::Automatic,
+            preset_region: None,
         }
     }
 }
@@ -1187,6 +1201,9 @@ impl EndpointSettings {
     }
 
     pub fn validate(&self) -> Result<(), ConfigError> {
+        if self.preset_region.is_some() && self.selection != EndpointSelection::Custom {
+            return Err(ConfigError::EndpointPresetRequiresCustom);
+        }
         if self.port == 0 {
             return Err(ConfigError::InvalidPort);
         }
@@ -1488,6 +1505,10 @@ fn valid_dns_name(value: &str) -> bool {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ConfigError {
+    #[error("endpoint presets require custom endpoint selection")]
+    EndpointPresetRequiresCustom,
+    #[error("endpoint presets require IPv6 only or prefer IPv6")]
+    EndpointPresetRequiresIpv6,
     #[error("ROUTING_RULE_INVALID:{0}")]
     InvalidRoutingRule(Uuid),
     #[error("ROUTING_RULE_CONFLICT:{0}:{1}")]
@@ -1653,6 +1674,8 @@ pub enum ConfigError {
 impl ConfigError {
     pub const fn stable_code(&self) -> Option<&'static str> {
         match self {
+            Self::EndpointPresetRequiresCustom => Some("ENDPOINT_PRESET_REQUIRES_CUSTOM"),
+            Self::EndpointPresetRequiresIpv6 => Some("ENDPOINT_PRESET_REQUIRES_IPV6"),
             Self::NonCanonicalPhysicalDirectDns => Some("DIRECT_DNS_PHYSICAL_NOT_CANONICAL"),
             Self::InvalidDirectDnsServerName => Some("DIRECT_DNS_SERVER_NAME_INVALID"),
             Self::InvalidDirectDnsPort => Some("DIRECT_DNS_PORT_INVALID"),
@@ -2134,6 +2157,7 @@ mod tests {
             port: 8443,
             sni: "shared.example.com".to_owned(),
             selection: crate::EndpointSelection::Custom,
+            preset_region: None,
         };
         let stored = config.upsert_runtime_profile(registered).unwrap();
         assert_eq!(stored.endpoint.ipv4, DEFAULT_ENDPOINT_V4);
@@ -2166,6 +2190,7 @@ mod tests {
             port: 443,
             sni: "zt-masque.cloudflareclient.com".to_owned(),
             selection: crate::EndpointSelection::Custom,
+            preset_region: None,
         };
         let stored = config.upsert_runtime_profile(registered).unwrap();
 
@@ -2183,6 +2208,7 @@ mod tests {
                 port: 443,
                 sni: "zt-masque.cloudflareclient.com".to_owned(),
                 selection: crate::EndpointSelection::Custom,
+                preset_region: None,
             },
             mtu: 1400,
             ..Profile::default()

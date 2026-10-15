@@ -50,7 +50,8 @@ class ControlCodec {
       ..string(2, profile.endpointIpv6)
       ..unsigned(3, profile.endpointPort)
       ..string(4, profile.sni)
-      ..enumeration(5, profile.endpointSelection.index + 1);
+      ..enumeration(5, profile.endpointSelection.index + 1)
+      ..string(6, profile.endpointPresetRegion?.name ?? '');
     final proxy = ControlPayloadWriter();
     for (final listener in profile.proxy.socksListeners) {
       proxy.string(1, listener);
@@ -834,6 +835,7 @@ UsqueProfile _decodeProfile(_ProtoReader reader) {
   var endpointIpv6 = defaults.endpointIpv6;
   var endpointPort = defaults.endpointPort;
   var endpointSelection = EndpointSelection.custom;
+  EndpointPresetRegion? endpointPresetRegion;
   var sni = defaults.sni;
   var mtu = defaults.mtu;
   final dnsServers = <String>[];
@@ -889,6 +891,10 @@ UsqueProfile _decodeProfile(_ProtoReader reader) {
                 1 => EndpointSelection.automatic,
                 _ => throw const FormatException('Invalid endpoint selection'),
               };
+            case 6:
+              endpointPresetRegion = EndpointPresetRegion.parse(
+                endpoint.string(endpointField),
+              );
             default:
               endpoint.skip(endpointField);
           }
@@ -1006,6 +1012,7 @@ UsqueProfile _decodeProfile(_ProtoReader reader) {
     endpointIpv6: endpointIpv6,
     endpointPort: endpointPort,
     endpointSelection: endpointSelection,
+    endpointPresetRegion: endpointPresetRegion,
     sni: sni,
     mtu: mtu,
     dnsIpv4:
@@ -1780,6 +1787,7 @@ EngineCapabilities _decodeCapabilities(_ProtoReader reader) {
   var routingRules = false;
   var liveAdsRules = false;
   var automaticEndpoints = false;
+  var endpointPresets = false;
   var vpnGatePoolFavorites = false;
   final congestionAlgorithms = <CongestionControlAlgorithm>[];
   final tlsFingerprints = <TlsFingerprint>[];
@@ -1814,6 +1822,8 @@ EngineCapabilities _decodeCapabilities(_ProtoReader reader) {
         chainOpenvpnUdp = reader.varint(field) != 0;
       case 39:
         chainHttpProxy = reader.varint(field) != 0;
+      case 49:
+        endpointPresets = reader.varint(field) != 0;
       case 47:
         liveAdsRules = reader.varint(field) != 0;
       case 48:
@@ -1898,6 +1908,7 @@ EngineCapabilities _decodeCapabilities(_ProtoReader reader) {
     routingRules: routingRules,
     liveAdsRules: liveAdsRules,
     automaticEndpoints: automaticEndpoints,
+    endpointPresets: endpointPresets,
     chainOpenvpnMultiEndpoint: chainOpenvpnMultiEndpoint,
     vpnGatePoolFavorites: vpnGatePoolFavorites,
     h3CongestionControlAlgorithms: List.unmodifiable(congestionAlgorithms),
@@ -2795,6 +2806,7 @@ EngineSnapshot _decodeSnapshot(_ProtoReader reader) {
   DataPlaneMode? dataPlane;
   L4Snapshot? l4;
   var adsRuleRevision = '';
+  String? endpointSource;
   var phase = ConnectionPhase.error;
   String? transport;
   String? family;
@@ -2817,6 +2829,8 @@ EngineSnapshot _decodeSnapshot(_ProtoReader reader) {
   while (!reader.isDone) {
     final field = reader.field();
     switch (field.number) {
+      case 24:
+        endpointSource = _emptyToNull(reader.string(field));
       case 23:
         adsRuleRevision = reader.string(field);
       case 1:
@@ -2897,6 +2911,7 @@ EngineSnapshot _decodeSnapshot(_ProtoReader reader) {
   }
   return EngineSnapshot(
     adsRuleRevision: adsRuleRevision,
+    endpointSource: endpointSource,
     phase: phase,
     sessionCongestionControl: sessionCongestionControl,
     dataPlane: dataPlane,

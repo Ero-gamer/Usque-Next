@@ -150,6 +150,7 @@ internal object NetworkQualityFields {
             "account_metadata_mutations",
             "shared_proxy_auth_application",
             "automatic_endpoints",
+            "endpoint_presets",
             "zero_trust_endpoint_editing",
         ).associateWith {
             source?.opt(it) ==

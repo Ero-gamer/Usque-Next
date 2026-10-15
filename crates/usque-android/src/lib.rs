@@ -141,6 +141,7 @@ pub extern "system" fn Java_io_github_georgexie2333_usque_NativeEngine_nativeCap
             "chain_proxy_encrypted_dns": engine_ready(),
             "custom_bypass": engine_ready(),
             "automatic_endpoints": engine_ready(),
+            "endpoint_presets": engine_ready(),
             "zero_trust_endpoint_editing": engine_ready(),
             "routing_rules": engine_ready(),
             "live_ads_rules": engine_ready(),
@@ -1084,6 +1085,8 @@ struct AndroidProfile {
     endpoint_v6: String,
     #[serde(default)]
     endpoint_selection: usque_core::EndpointSelection,
+    #[serde(default)]
+    endpoint_preset_region: Option<usque_core::EndpointPresetRegion>,
     endpoint_port: u16,
     sni: String,
     mtu: u16,
@@ -1299,6 +1302,7 @@ fn android_profile_to_core(source: AndroidProfile) -> Result<Profile, String> {
             port: source.endpoint_port,
             sni: source.sni,
             selection: source.endpoint_selection,
+            preset_region: source.endpoint_preset_region,
         },
         ip_policy,
         mtu: source.mtu,
@@ -2191,6 +2195,7 @@ fn android_profile_value(
         "endpoint_v4": profile.endpoint.ipv4.to_string(),
         "endpoint_v6": profile.endpoint.ipv6.to_string(),
         "endpoint_selection": profile.endpoint.selection,
+        "endpoint_preset_region": profile.endpoint.preset_region,
         "endpoint_port": profile.endpoint.port,
         "sni": profile.endpoint.sni,
         "identity_provider": match binding {
@@ -3190,6 +3195,8 @@ struct NativeSnapshot {
     #[serde(skip_serializing_if = "Option::is_none")]
     address_family: Option<String>,
     download_bytes_per_second: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    endpoint_source: Option<usque_core::EndpointSource>,
     upload_bytes_per_second: u64,
     downloaded_bytes: u64,
     uploaded_bytes: u64,
@@ -3252,6 +3259,7 @@ impl NativeSnapshot {
             failure: None,
             transport: None,
             address_family: None,
+            endpoint_source: None,
             download_bytes_per_second: 0,
             upload_bytes_per_second: 0,
             downloaded_bytes: 0,
@@ -4087,6 +4095,31 @@ mod tests {
             exported["bypass_cidrs"],
             serde_json::json!(["192.0.2.0/24"])
         );
+    }
+
+    #[test]
+    fn android_profile_roundtrips_presets_and_rejects_incompatible_policy() {
+        let legacy = parse_android_profile(&valid_profile_json()).unwrap();
+        assert_eq!(legacy.endpoint.preset_region, None);
+        for region in usque_core::EndpointPresetRegion::ALL {
+            let mut source: serde_json::Value =
+                serde_json::from_str(&valid_profile_json()).unwrap();
+            source["endpoint_selection"] = serde_json::json!("custom");
+            source["endpoint_preset_region"] = serde_json::json!(region.as_str());
+            source["ip_policy"] = serde_json::json!("preferIpv6");
+            let profile = parse_android_profile(&source.to_string()).unwrap();
+            assert_eq!(profile.endpoint.preset_region, Some(region));
+            assert_eq!(
+                parse_android_profile(&android_profile_value(&profile, None, false).to_string())
+                    .unwrap(),
+                profile
+            );
+            source["ip_policy"] = serde_json::json!("automatic");
+            assert!(parse_android_profile(&source.to_string()).is_err());
+        }
+        let mut source: serde_json::Value = serde_json::from_str(&valid_profile_json()).unwrap();
+        source["endpoint_preset_region"] = serde_json::json!("https://example.com");
+        assert!(parse_android_profile(&source.to_string()).is_err());
     }
 
     #[test]

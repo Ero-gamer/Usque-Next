@@ -1432,6 +1432,7 @@ internal class VpnControlClient(
                 "l4" to L4StatusFields.decode(bundle.getString(ServiceSnapshotState.WireKeys.L4)),
                 "vpn_gate" to VpnGateFields.decodeStatus(bundle.getString(ServiceSnapshotState.WireKeys.VPN_GATE)),
                 "address_family" to bundle.getString("address_family"),
+                "endpoint_source" to bundle.getString(ServiceSnapshotState.WireKeys.ENDPOINT_SOURCE),
                 "connected_at" to bundle.getString("connected_at"),
                 "download_bytes_per_second" to bundle.getLong("download_bytes_per_second"),
                 "upload_bytes_per_second" to bundle.getLong("upload_bytes_per_second"),

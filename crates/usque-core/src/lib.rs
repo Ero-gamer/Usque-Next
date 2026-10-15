@@ -21,12 +21,12 @@ pub mod warp_wireguard;
 pub use config::{
     Account, AppConfig, AppPreferences, CONSUMER_L4_SNI, ConfigError, CongestionControlAlgorithm,
     DEFAULT_PROFILE_ID, DataPlaneMode, DirectDnsMode, DirectDnsSettings, DnsMode,
-    EndpointSelection, EndpointSettings, FrontendSettings, InitialIdentityOperation,
-    InitialIdentityPhase, IpPolicy, LogLevel, MAX_GEO_DIRECT_COUNTRIES, ManagedEndpointIps,
-    OperatingMode, PendingIdentityReplacement, Profile, ProxyAuthCredentials, ProxyDnsMode,
-    ProxySettings, SHARED_NETWORK_SECRET_ID, SharedNetworkSettings, TlsFingerprint,
-    TransportPolicy, WarpDnsMode, WarpDnsSettings, ZERO_TRUST_L4_SNI, l4_server_name,
-    validate_proxy_password, validate_proxy_username,
+    EndpointPresetRegion, EndpointPresetTier, EndpointSelection, EndpointSettings,
+    FrontendSettings, InitialIdentityOperation, InitialIdentityPhase, IpPolicy, LogLevel,
+    MAX_GEO_DIRECT_COUNTRIES, ManagedEndpointIps, OperatingMode, PendingIdentityReplacement,
+    Profile, ProxyAuthCredentials, ProxyDnsMode, ProxySettings, SHARED_NETWORK_SECRET_ID,
+    SharedNetworkSettings, TlsFingerprint, TransportPolicy, WarpDnsMode, WarpDnsSettings,
+    ZERO_TRUST_L4_SNI, l4_server_name, validate_proxy_password, validate_proxy_username,
 };
 pub use config::{RoutingAction, RoutingMatch, RoutingRule, RoutingSettings};
 pub use diagnostics::{
@@ -66,8 +66,8 @@ pub use registration::{
 };
 pub use state::{
     AddressFamily, ConnectionError, ConnectionPhase, ConnectionSnapshot, ConnectionWarning,
-    ErrorCode, FrontendKind, FrontendPhase, FrontendStatus, KillSwitchState, LockdownState,
-    StateMachine, Statistics, Transport,
+    EndpointSource, ErrorCode, FrontendKind, FrontendPhase, FrontendStatus, KillSwitchState,
+    LockdownState, StateMachine, Statistics, Transport,
 };
 
 pub const PRODUCT_NAME: &str = "Usque";
