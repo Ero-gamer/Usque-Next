@@ -155,7 +155,7 @@ mod tests {
             previous.tls_fingerprint = fingerprint;
             let mut next = previous.clone();
             next.tls_fingerprint = if fingerprint == crate::TlsFingerprint::Default {
-                crate::TlsFingerprint::Chrome131
+                crate::TlsFingerprint::Chrome155
             } else {
                 crate::TlsFingerprint::Default
             };

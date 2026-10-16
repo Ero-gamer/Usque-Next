@@ -9,7 +9,7 @@ internal object TlsFingerprintSettings {
         val source = runCatching { JSONObject(value).optJSONArray("tls_fingerprints") }.getOrNull()
         return (0 until minOf(source?.length() ?: 0, 32))
             .mapNotNull { source?.opt(it) as? String }
-            .filter { it == "default" || it == "chrome131" }
+            .filter { it == "default" || it == "chrome155" }
             .distinct()
     }
 }

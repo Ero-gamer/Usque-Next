@@ -7,8 +7,8 @@ active, waiting for a later connection, or awaiting confirmation.
 ## MASQUE TLS fingerprint / MASQUE TLS 指纹
 
 Open **Settings → Advanced network settings → Transport → TLS fingerprint**,
-choose **Default** or **Chrome 131**, then **Apply changes**. The selection is a
-shared network preference. Default preserves the existing handshake; Chrome 131
+choose **Default** or **Chrome 155**, then **Apply changes**. The selection is a
+shared network preference. Default preserves the existing handshake; Chrome 155
 uses a fixed ClientHello profile with the required QUIC adaptation for H3.
 Changing it is a cold change, subject to the application rules below. New and
 legacy configurations default to the existing behavior; restoring network
@@ -16,14 +16,16 @@ defaults stages that same default. Authentication and endpoint public-key pin
 checks remain enforced. See the [fingerprint guide](TLS_FINGERPRINT.md) for
 instructions, scope and compatibility limits.
 
-Schema 25 persists `tls_fingerprint` as `default` or `chrome131`; migration
-retains Default. Profile protobuf field 26 carries the choice and capability
+The `tls_fingerprint` field was introduced in schema 25. Current values are
+`default` and `chrome155`; missing values retain Default. The unreleased
+`chrome131` value has no migration or alias. Profile protobuf field 26 carries
+Default = 1 or Chrome 155 = 3; value 2 is retired. Capability
 field 48 (`tls_fingerprints`) advertises supported values. The settings mask is
 `tls_fingerprint`. Unknown explicit values are rejected. The GUI disables the
 picker for an older engine and does not silently connect a saved Chrome profile
 using Default.
 
-在 **设置 → 高级网络设置 → 传输协议 → TLS 指纹** 中选择 **默认** 或 **Chrome 131**，
+在 **设置 → 高级网络设置 → 传输协议 → TLS 指纹** 中选择 **默认** 或 **Chrome 155**，
 再点击 **应用修改**。此选项由所有账号共享；连接稳定时应用会重新连接，其他状态
 遵循下述应用规则。升级保留默认握手行为，客户端认证和端点公钥校验不变。
 

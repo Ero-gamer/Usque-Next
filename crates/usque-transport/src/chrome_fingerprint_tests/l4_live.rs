@@ -9,11 +9,11 @@ use tokio::time::{Instant, timeout, timeout_at};
 use tokio_util::sync::CancellationToken;
 use usque_core::{
     AddressFamily, AppConfig, DataPlaneMode, EndpointSelection, IdentityMetadata, IdentityProvider,
-    IpPolicy, Profile, TlsFingerprint, Transport, TransportPolicy,
+    IpPolicy, Profile, Transport, TransportPolicy,
 };
 use usque_platform::{SecretRecord, SecretVault, WindowsCredentialVault};
 
-use super::{Carrier, Probe};
+use super::{Carrier, experiment_profiles};
 use crate::h2::MasqueTlsIdentity;
 use crate::l4::L4Client;
 use crate::socket::noop_socket_protector;
@@ -143,7 +143,7 @@ fn application_status_requires_complete_valid_http_headers() {
     }
 }
 
-async fn l4_identity(config: &AppConfig) -> MasqueTlsIdentity {
+pub(super) async fn l4_identity(config: &AppConfig) -> MasqueTlsIdentity {
     let id = config.active_profile_id.expect("active identity required");
     let metadata = WindowsCredentialVault
         .get(id, SecretRecord::IdentityMetadata)
@@ -171,8 +171,23 @@ async fn l4_identity(config: &AppConfig) -> MasqueTlsIdentity {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "explicit L4 permission and USQUE_LIVE_L4_CHROME_PROBE=1, USQUE_LIVE_CONFIG, USQUE_LIVE_ENDPOINT; no TUN"]
 async fn cloudflare_accepts_chrome_l4_and_transfers_https_without_tun() {
+    run(false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "explicit Chrome155 WARP probe; USQUE_LIVE_CHROME155_PROBE=1 and existing config/endpoint; no TUN"]
+async fn cloudflare_observes_chrome155_l4_without_tun() {
+    run(true).await;
+}
+
+async fn run(chrome155: bool) {
     assert_eq!(
-        std::env::var("USQUE_LIVE_L4_CHROME_PROBE").as_deref(),
+        std::env::var(if chrome155 {
+            "USQUE_LIVE_CHROME155_PROBE"
+        } else {
+            "USQUE_LIVE_L4_CHROME_PROBE"
+        })
+        .as_deref(),
         Ok("1")
     );
     let config_path = std::env::var_os("USQUE_LIVE_CONFIG").expect("explicit config path");
@@ -191,24 +206,17 @@ async fn cloudflare_accepts_chrome_l4_and_transfers_https_without_tun() {
     assert_eq!(endpoint.port(), 443);
     let identity = l4_identity(&config).await;
     let mut successful = 0;
+    let mut profiles = experiment_profiles(chrome155);
     for round in 0..3 {
-        for chrome in if round == 1 {
-            [true, false]
-        } else {
-            [false, true]
-        } {
-            let probe = Probe::new();
+        for preset in &profiles {
+            let probe = preset.probe();
             let mut candidate = identity.clone();
             candidate.fingerprint_probe = Some(probe.clone());
             let mut profile = Profile {
                 data_plane: DataPlaneMode::L4Proxy,
                 transport: TransportPolicy::Http3,
                 ip_policy: IpPolicy::Ipv4Only,
-                tls_fingerprint: if chrome {
-                    TlsFingerprint::Chrome131
-                } else {
-                    TlsFingerprint::Default
-                },
+                tls_fingerprint: preset.core(),
                 ..Default::default()
             };
             profile.endpoint.selection = EndpointSelection::Custom;
@@ -270,7 +278,7 @@ async fn cloudflare_accepts_chrome_l4_and_transfers_https_without_tun() {
                 && observed
                     .hello
                     .as_ref()
-                    .is_some_and(|hello| !chrome || hello.verify_chrome(Carrier::H3).is_ok());
+                    .is_some_and(|hello| preset.verify(hello, Carrier::H3));
             let accepted = state.stage == "complete"
                 && state.connect_accepted
                 && state.inner_tls_verified
@@ -278,14 +286,15 @@ async fn cloudflare_accepts_chrome_l4_and_transfers_https_without_tun() {
                     .as_ref()
                     .is_some_and(|metrics| metrics.connect_successes > 0)
                 && profile_valid
-                && observed.tls_ready
+                && observed.authentication_observed()
                 && observed.alpn == "h3"
                 && cleanup_complete == Some(true)
                 && !timed_out;
             println!(
                 "CHROME_L4_PROBE {}",
                 serde_json::json!({
-                    "profile": if chrome { "chrome_131_tls" } else { "default_control" },
+                    "profile": preset.name(),
+                    "authentication": observed.authentication_summary(),
                     "round": round + 1, "elapsed_ms": started.elapsed().as_millis(),
                     "client_hello_verified": profile_valid, "hello": observed.hello.as_ref().map(|hello| hello.summary()),
                     "tls_ready": observed.tls_ready, "tls_version": observed.tls_version, "alpn": observed.alpn,
@@ -303,9 +312,11 @@ async fn cloudflare_accepts_chrome_l4_and_transfers_https_without_tun() {
             );
             successful += usize::from(accepted);
         }
+        profiles.rotate_left(1);
     }
     assert_eq!(
-        successful, 6,
+        successful,
+        if chrome155 { 9 } else { 6 },
         "all L4 controls and Chrome trials must accept CONNECT and transfer verified HTTPS; inspect sanitized records"
     );
 }

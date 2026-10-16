@@ -815,7 +815,7 @@ static enum ssl_hs_wait_t do_send_client_encrypted_extensions(
     if (!ssl->method->init_message(ssl, cbb.get(), &body,
                                    SSL3_MT_ENCRYPTED_EXTENSIONS) ||
         !CBB_add_u16_length_prefixed(&body, &extensions) ||
-        !CBB_add_u16(&extensions, TLSEXT_TYPE_application_settings) ||
+        !CBB_add_u16(&extensions, ssl_application_settings_extension(ssl)) ||
         !CBB_add_u16_length_prefixed(&extensions, &extension) ||
         !CBB_add_bytes(&extension,
                        hs->new_session->local_application_settings.data(),

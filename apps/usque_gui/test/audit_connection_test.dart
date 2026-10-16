@@ -274,7 +274,7 @@ void main() {
         UsqueProfile.defaultProfile().copyWith(
           autoConnect: true,
           endpointSelection: EndpointSelection.custom,
-          tlsFingerprint: TlsFingerprint.chrome131,
+          tlsFingerprint: TlsFingerprint.chrome155,
         ),
       ]
       ..storedIdentityStatuses = {
@@ -303,7 +303,7 @@ void main() {
         expect(engine.calls.where((call) => call == 'connect'), hasLength(1));
         expect(
           engine.lastConnectedProfile?.tlsFingerprint,
-          TlsFingerprint.chrome131,
+          TlsFingerprint.chrome155,
         );
         expect(
           engine.lastConnectedProfile?.endpointSelection,
@@ -330,7 +330,7 @@ void main() {
         expect(engine.calls, contains('disconnect'));
         expect(engine.calls, isNot(contains('connect')));
         expect(app.snapshot.phase, ConnectionPhase.disconnected);
-        expect(app.sharedNetwork.tlsFingerprint, TlsFingerprint.chrome131);
+        expect(app.sharedNetwork.tlsFingerprint, TlsFingerprint.chrome155);
       },
     );
   }

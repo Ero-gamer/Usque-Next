@@ -7,11 +7,11 @@ use serde::{Deserialize, Serialize};
 pub enum TlsFingerprint {
     #[default]
     Default,
-    Chrome131,
+    Chrome155,
 }
 
 impl TlsFingerprint {
-    pub const ALL: [Self; 2] = [Self::Default, Self::Chrome131];
+    pub const ALL: [Self; 2] = [Self::Default, Self::Chrome155];
 }
 
 #[cfg(test)]
@@ -43,7 +43,7 @@ mod tests {
     fn preset_survives_shared_persistence_and_account_hydration() {
         for (preset, name) in [
             (TlsFingerprint::Default, "default"),
-            (TlsFingerprint::Chrome131, "chrome131"),
+            (TlsFingerprint::Chrome155, "chrome155"),
         ] {
             assert_eq!(serde_json::to_value(preset).unwrap(), name);
             let profile = Profile {
@@ -58,7 +58,7 @@ mod tests {
                 preset
             );
         }
-        for value in ["chrome", "Chrome131", "unknown"] {
+        for value in ["chrome", "chrome131", "Chrome155", "unknown"] {
             assert!(serde_json::from_value::<TlsFingerprint>(serde_json::json!(value)).is_err());
         }
     }

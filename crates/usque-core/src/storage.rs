@@ -600,11 +600,11 @@ mod tests {
             loaded.network.tls_fingerprint,
             crate::TlsFingerprint::Default
         );
-        loaded.network.tls_fingerprint = crate::TlsFingerprint::Chrome131;
+        loaded.network.tls_fingerprint = crate::TlsFingerprint::Chrome155;
         store.save(&loaded).unwrap();
         assert_eq!(
             store.load().unwrap().network.tls_fingerprint,
-            crate::TlsFingerprint::Chrome131
+            crate::TlsFingerprint::Chrome155
         );
     }
 

@@ -11,9 +11,13 @@ pub(super) struct Hello {
     pub signatures: Vec<u16>,
     pub versions: Vec<u16>,
     pub key_share_groups: Vec<u16>,
+    pub key_share_lengths: Vec<usize>,
     pub alpn: Vec<String>,
     pub compression: Vec<u16>,
     pub session_id_length: usize,
+    pub trust_anchor_ids: Vec<Vec<u8>>,
+    pub ech_shape: Option<(usize, u16, u16, usize, usize)>,
+    pub extension_bodies_valid: bool,
 }
 
 struct Reader<'a>(&'a [u8]);
@@ -108,10 +112,54 @@ impl Hello {
         }
         let mut shares = Reader(Reader(data.get(&51)?).vector16()?);
         let mut key_share_groups = Vec::new();
+        let mut key_share_lengths = Vec::new();
         while !shares.0.is_empty() {
             key_share_groups.push(shares.u16()?);
-            shares.vector16()?;
+            key_share_lengths.push(shares.vector16()?.len());
         }
+        let mut trust_anchor_ids = Vec::new();
+        if let Some(bytes) = data.get(&0xca34) {
+            let mut reader = Reader(bytes);
+            let mut ids = Reader(reader.vector16()?);
+            if !reader.0.is_empty() {
+                return None;
+            }
+            while !ids.0.is_empty() {
+                let id = ids.vector8()?;
+                if id.is_empty() {
+                    return None;
+                }
+                trust_anchor_ids.push(id.to_vec());
+            }
+        }
+        let ech_shape = if let Some(bytes) = data.get(&65037) {
+            let mut reader = Reader(bytes);
+            let outer = reader.u8()?;
+            let kdf = reader.u16()?;
+            let aead = reader.u16()?;
+            reader.u8()?; // ephemeral config ID is never retained
+            let enc = reader.vector16()?.len();
+            let payload = reader.vector16()?.len();
+            if !reader.0.is_empty() {
+                return None;
+            }
+            Some((outer, kdf, aead, enc, payload))
+        } else {
+            None
+        };
+        let extension_bodies_valid = [
+            (5, &[1, 0, 0, 0, 0][..]),
+            (11, &[1, 0][..]),
+            (18, &[][..]),
+            (23, &[][..]),
+            (35, &[][..]),
+            (45, &[1, 1][..]),
+            (65281, &[0][..]),
+            (17513, &[0, 3, 2, b'h', b'2'][..]),
+            (17613, &[0, 3, 2, b'h', b'2'][..]),
+        ]
+        .iter()
+        .all(|(id, expected)| data.get(id).is_none_or(|actual| actual == expected));
         Some(Self {
             ciphers,
             extensions,
@@ -119,13 +167,25 @@ impl Hello {
             signatures: vector16(13)?,
             versions: vector8(43)?,
             key_share_groups,
+            key_share_lengths,
             alpn,
             compression: vector8(27)?,
             session_id_length,
+            trust_anchor_ids,
+            ech_shape,
+            extension_bodies_valid,
         })
     }
 
     pub fn verify_chrome(&self, carrier: Carrier) -> Result<(), String> {
+        self.verify_variant(carrier, false)
+    }
+
+    pub fn verify_chrome155(&self, carrier: Carrier) -> Result<(), String> {
+        self.verify_variant(carrier, true)
+    }
+
+    fn verify_variant(&self, carrier: Carrier, chrome155: bool) -> Result<(), String> {
         let mut expected_ciphers = vec![0x1301, 0x1302, 0x1303];
         if carrier == Carrier::H2 {
             expected_ciphers.extend([
@@ -141,11 +201,28 @@ impl Hello {
             Carrier::H2 => vec![0x0304, 0x0303],
             Carrier::H3 => vec![0x0304],
         };
-        let expected_extensions = match carrier {
+        let mut expected_extensions = match carrier {
             Carrier::H2 => vec![
                 0, 5, 10, 11, 13, 16, 18, 23, 27, 35, 43, 45, 51, 17513, 65037, 65281,
             ],
             Carrier::H3 => vec![0, 5, 10, 13, 16, 18, 27, 43, 45, 51, 57, 65037],
+        };
+        if chrome155 {
+            for id in &mut expected_extensions {
+                if *id == 17513 {
+                    *id = 17613;
+                }
+            }
+            expected_extensions.push(0xca34);
+            expected_extensions.sort_unstable();
+        }
+        let classical = [
+            0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
+        ];
+        let expected_signatures = if chrome155 {
+            [&[0x0904, 0x0905, 0x0906][..], &classical].concat()
+        } else {
+            classical.to_vec()
         };
         let mut actual_extensions = normalized(&self.extensions);
         actual_extensions.sort_unstable();
@@ -155,10 +232,9 @@ impl Hello {
             ("groups", normalized(&self.groups) == [4588, 29, 23, 24]),
             (
                 "signatures",
-                self.signatures
-                    == [
-                        0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
-                    ],
+                normalized(&self.signatures) == expected_signatures
+                    && self.signatures.len() == expected_signatures.len() + usize::from(chrome155)
+                    && (!chrome155 || self.signatures.first().is_some_and(|v| grease(*v))),
             ),
             (
                 "key_shares",
@@ -167,6 +243,26 @@ impl Hello {
             ("versions", normalized(&self.versions) == expected_versions),
             ("alpn", self.alpn == expected_alpn),
             ("brotli", self.compression == [2]),
+            ("extension_bodies", self.extension_bodies_valid),
+            (
+                "key_share_lengths",
+                self.key_share_groups
+                    .iter()
+                    .zip(&self.key_share_lengths)
+                    .filter(|(group, _)| !grease(**group))
+                    .map(|(_, length)| *length)
+                    .collect::<Vec<_>>()
+                    == [1216, 32],
+            ),
+            (
+                "trust_anchors",
+                self.trust_anchor_ids
+                    == if chrome155 {
+                        chrome155_trust_anchors()
+                    } else {
+                        Vec::new()
+                    },
+            ),
             (
                 "grease",
                 self.ciphers.iter().any(|value| grease(*value))
@@ -177,7 +273,19 @@ impl Hello {
                         .count()
                         == 2,
             ),
-            ("ech_grease", self.extensions.contains(&65037)),
+            (
+                "ech_grease",
+                self.extensions.contains(&65037)
+                    && self
+                        .ech_shape
+                        .is_some_and(|(outer, kdf, aead, enc, payload)| {
+                            outer == 0
+                                && kdf == 1
+                                && aead == 1
+                                && enc == 32
+                                && [144, 176, 208, 240].contains(&payload)
+                        }),
+            ),
             (
                 "ocsp_sct",
                 self.extensions.contains(&5) && self.extensions.contains(&18),
@@ -186,7 +294,8 @@ impl Hello {
                 "carrier",
                 match carrier {
                     Carrier::H2 => {
-                        self.extensions.contains(&17513)
+                        self.extensions
+                            .contains(&if chrome155 { 17613 } else { 17513 })
                             && !self.extensions.contains(&57)
                             && self.session_id_length == 32
                     }
@@ -217,10 +326,55 @@ impl Hello {
             "groups": normalized(&self.groups),
             "signature_algorithms": self.signatures,
             "key_share_groups": normalized(&self.key_share_groups),
+            "key_share_lengths": self.key_share_lengths,
             "supported_versions": normalized(&self.versions),
             "alpn": self.alpn,
             "certificate_compression": self.compression,
-            "session_id_length": self.session_id_length
+            "session_id_length": self.session_id_length,
+            "trust_anchor_count": self.trust_anchor_ids.len(),
+            "ech_shape": self.ech_shape
         })
     }
+}
+
+fn chrome155_trust_anchors() -> Vec<Vec<u8>> {
+    // Independent public fixture from uTLS ff1b50fbbe9a u_chrome155.go.
+    [
+        "82df130201",
+        "82df130206",
+        "82df13020d",
+        "82df13020e",
+        "82df13020f",
+        "82df130212",
+        "82df130213",
+        "82df130214",
+        "839a648c9b2d0107",
+        "839a648c9b2d0108",
+        "839a648c9b2d0109",
+        "839a648c9b2d010a",
+        "839a648c9b2d010b",
+        "839a648c9b2d010c",
+        "839a648c9b2d010d",
+        "839a648c9b2d0112",
+        "839a648c9b2d0113",
+        "d6790901",
+        "d6790904",
+        "d6790905",
+        "d6790906",
+        "d6790907",
+        "d6790908",
+        "d679090a",
+        "d679090b",
+        "d679090c",
+        "d679090d",
+        "d679090f",
+    ]
+    .iter()
+    .map(|hex| {
+        hex.as_bytes()
+            .chunks_exact(2)
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect()
+    })
+    .collect()
 }

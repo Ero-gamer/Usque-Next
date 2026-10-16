@@ -926,7 +926,7 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
                   child: Text(
                     value == TlsFingerprint.defaultProfile
                         ? strings.get('tls_fingerprint_default')
-                        : 'Chrome 131',
+                        : 'Chrome 155',
                   ),
                 ),
               )

@@ -1219,6 +1219,8 @@ pub(crate) fn configure_client_identity_and_pin(
         matched: AtomicBool::new(false),
     });
     let callback_state = Arc::clone(&pin_state);
+    #[cfg(test)]
+    let fingerprint_probe = identity.fingerprint_probe.clone();
     builder.set_custom_verify_callback(SslVerifyMode::PEER, move |ssl| {
         callback_state.checked.store(true, Ordering::SeqCst);
         let matched = ssl
@@ -1227,6 +1229,10 @@ pub(crate) fn configure_client_identity_and_pin(
             .and_then(|public_key| public_key.public_key_to_der().ok())
             .is_some_and(|spki| endpoint_pin.verify_peer_spki(&spki).is_ok());
         callback_state.matched.store(matched, Ordering::SeqCst);
+        #[cfg(test)]
+        if let Some(probe) = &fingerprint_probe {
+            probe.observe_pin_result(matched);
+        }
         if matched {
             Ok(())
         } else {

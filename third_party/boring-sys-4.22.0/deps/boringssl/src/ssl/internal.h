@@ -1629,7 +1629,8 @@ enum ssl_grease_index_t {
   ssl_grease_version,
   ssl_grease_ticket_extension,
   ssl_grease_ech_config_id,
-  ssl_grease_last_index = ssl_grease_ech_config_id,
+  ssl_grease_signature_algorithm,
+  ssl_grease_last_index = ssl_grease_signature_algorithm,
 };
 
 enum tls12_server_hs_state_t {
@@ -2223,6 +2224,8 @@ bool ssl_negotiate_alpn(SSL_HANDSHAKE *hs, uint8_t *out_alert,
 // ssl_get_local_application_settings looks up the configured ALPS value for
 // |protocol|. If found, it sets |*out_settings| to the value and returns true.
 // Otherwise, it returns false.
+uint16_t ssl_application_settings_extension(const SSL *ssl);
+
 bool ssl_get_local_application_settings(const SSL_HANDSHAKE *hs,
                                         Span<const uint8_t> *out_settings,
                                         Span<const uint8_t> protocol);
@@ -3719,6 +3722,9 @@ struct ssl_ctx_st {
 
   // grease_enabled is whether GREASE (RFC 8701) is enabled.
   bool grease_enabled : 1;
+
+  // Explicit opt-in; does not alter peer authentication or verification support.
+  bool usque_chrome155_extensions : 1;
 
   // permute_extensions is whether to permute extensions when sending messages.
   bool permute_extensions : 1;

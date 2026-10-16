@@ -1081,8 +1081,20 @@ static bool ext_sigalgs_add_clienthello(const SSL_HANDSHAKE *hs, CBB *out,
   CBB contents, sigalgs_cbb;
   if (!CBB_add_u16(out_compressible, TLSEXT_TYPE_signature_algorithms) ||
       !CBB_add_u16_length_prefixed(out_compressible, &contents) ||
-      !CBB_add_u16_length_prefixed(&contents, &sigalgs_cbb) ||
-      !tls12_add_verify_sigalgs(hs, &sigalgs_cbb) ||
+      !CBB_add_u16_length_prefixed(&contents, &sigalgs_cbb)) {
+    return false;
+  }
+  // Advertisement only: do not add unsupported algorithms to verify_sigalgs.
+  // tls12_check_peer_sigalg and EVP verification remain fail-closed.
+  if (hs->ssl->ctx->usque_chrome155_extensions &&
+      (!CBB_add_u16(&sigalgs_cbb,
+                    ssl_get_grease_value(hs, ssl_grease_signature_algorithm)) ||
+       !CBB_add_u16(&sigalgs_cbb, 0x0904) ||
+       !CBB_add_u16(&sigalgs_cbb, 0x0905) ||
+       !CBB_add_u16(&sigalgs_cbb, 0x0906))) {
+    return false;
+  }
+  if (!tls12_add_verify_sigalgs(hs, &sigalgs_cbb) ||
       !CBB_flush(out_compressible)) {
     return false;
   }
@@ -2945,6 +2957,11 @@ static bool cert_compression_add_serverhello(SSL_HANDSHAKE *hs, CBB *out) {
 //
 // https://tools.ietf.org/html/draft-vvv-tls-alps-01
 
+uint16_t ssl_application_settings_extension(const SSL *ssl) {
+  return ssl->ctx->usque_chrome155_extensions ? 17613
+                                             : TLSEXT_TYPE_application_settings;
+}
+
 bool ssl_get_local_application_settings(const SSL_HANDSHAKE *hs,
                                         Span<const uint8_t> *out_settings,
                                         Span<const uint8_t> protocol) {
@@ -2957,10 +2974,13 @@ bool ssl_get_local_application_settings(const SSL_HANDSHAKE *hs,
   return false;
 }
 
-static bool ext_alps_add_clienthello(const SSL_HANDSHAKE *hs, CBB *out,
+static bool ext_alps_add_clienthello_impl(const SSL_HANDSHAKE *hs, CBB *out,
                                      CBB *out_compressible,
-                                     ssl_client_hello_type_t type) {
+                                     ssl_client_hello_type_t type, uint16_t codepoint) {
   const SSL *const ssl = hs->ssl;
+  if (codepoint != ssl_application_settings_extension(ssl)) {
+    return true;
+  }
   if (// ALPS requires TLS 1.3.
       hs->max_version < TLS1_3_VERSION ||
       // Do not offer ALPS without ALPN.
@@ -2973,7 +2993,7 @@ static bool ext_alps_add_clienthello(const SSL_HANDSHAKE *hs, CBB *out,
   }
 
   CBB contents, proto_list, proto;
-  if (!CBB_add_u16(out_compressible, TLSEXT_TYPE_application_settings) ||
+  if (!CBB_add_u16(out_compressible, codepoint) ||
       !CBB_add_u16_length_prefixed(out_compressible, &contents) ||
       !CBB_add_u16_length_prefixed(&contents, &proto_list)) {
     return false;
@@ -2988,6 +3008,17 @@ static bool ext_alps_add_clienthello(const SSL_HANDSHAKE *hs, CBB *out,
   }
 
   return CBB_flush(out_compressible);
+}
+
+static bool ext_alps_add_clienthello(const SSL_HANDSHAKE *hs, CBB *out,
+                                   CBB *compressible, ssl_client_hello_type_t type) {
+  return ext_alps_add_clienthello_impl(hs, out, compressible, type,
+                                       TLSEXT_TYPE_application_settings);
+}
+
+static bool ext_alps_new_add_clienthello(const SSL_HANDSHAKE *hs, CBB *out,
+                                       CBB *compressible, ssl_client_hello_type_t type) {
+  return ext_alps_add_clienthello_impl(hs, out, compressible, type, 17613);
 }
 
 static bool ext_alps_parse_serverhello(SSL_HANDSHAKE *hs, uint8_t *out_alert,
@@ -3019,8 +3050,12 @@ static bool ext_alps_parse_serverhello(SSL_HANDSHAKE *hs, uint8_t *out_alert,
   return true;
 }
 
-static bool ext_alps_add_serverhello(SSL_HANDSHAKE *hs, CBB *out) {
+static bool ext_alps_add_serverhello_impl(SSL_HANDSHAKE *hs, CBB *out,
+                                         uint16_t codepoint) {
   SSL *const ssl = hs->ssl;
+  if (codepoint != ssl_application_settings_extension(ssl)) {
+    return true;
+  }
   // If early data is accepted, we omit the ALPS extension. It is implicitly
   // carried over from the previous connection.
   if (hs->new_session == nullptr ||
@@ -3030,7 +3065,7 @@ static bool ext_alps_add_serverhello(SSL_HANDSHAKE *hs, CBB *out) {
   }
 
   CBB contents;
-  if (!CBB_add_u16(out, TLSEXT_TYPE_application_settings) ||
+  if (!CBB_add_u16(out, codepoint) ||
       !CBB_add_u16_length_prefixed(out, &contents) ||
       !CBB_add_bytes(&contents,
                      hs->new_session->local_application_settings.data(),
@@ -3040,6 +3075,14 @@ static bool ext_alps_add_serverhello(SSL_HANDSHAKE *hs, CBB *out) {
   }
 
   return true;
+}
+
+static bool ext_alps_add_serverhello(SSL_HANDSHAKE *hs, CBB *out) {
+  return ext_alps_add_serverhello_impl(hs, out, TLSEXT_TYPE_application_settings);
+}
+
+static bool ext_alps_new_add_serverhello(SSL_HANDSHAKE *hs, CBB *out) {
+  return ext_alps_add_serverhello_impl(hs, out, 17613);
 }
 
 bool ssl_negotiate_alps(SSL_HANDSHAKE *hs, uint8_t *out_alert,
@@ -3056,7 +3099,7 @@ bool ssl_negotiate_alps(SSL_HANDSHAKE *hs, uint8_t *out_alert,
       ssl_get_local_application_settings(hs, &settings,
                                          ssl->s3->alpn_selected) &&
       ssl_client_hello_get_extension(client_hello, &alps_contents,
-                                     TLSEXT_TYPE_application_settings)) {
+                                     ssl_application_settings_extension(ssl))) {
     // Check if the client supports ALPS with the selected ALPN.
     bool found = false;
     CBS alps_list;
@@ -3092,6 +3135,47 @@ bool ssl_negotiate_alps(SSL_HANDSHAKE *hs, uint8_t *out_alert,
   }
 
   return true;
+}
+
+// Chrome 155.0.8059.40 Root Store advertisement, pinned to uTLS ff1b50fbbe9a.
+// These public IDs do not add trust roots or affect certificate/pin verification.
+static bool ext_usque_trust_anchors_add_clienthello(
+    const SSL_HANDSHAKE *hs, CBB *out, CBB *compressible,
+    ssl_client_hello_type_t type) {
+  if (!hs->ssl->ctx->usque_chrome155_extensions) {
+    return true;
+  }
+  CBB contents, ids, id;
+  if (!CBB_add_u16(compressible, 0xca34) ||
+      !CBB_add_u16_length_prefixed(compressible, &contents) ||
+      !CBB_add_u16_length_prefixed(&contents, &ids)) {
+    return false;
+  }
+  static const uint8_t prefix1[] = {0x82, 0xdf, 0x13, 0x02};
+  static const uint8_t suffix1[] = {0x01, 0x06, 0x0d, 0x0e, 0x0f, 0x12, 0x13, 0x14};
+  static const uint8_t prefix2[] = {0x83, 0x9a, 0x64, 0x8c, 0x9b, 0x2d, 0x01};
+  static const uint8_t suffix2[] = {0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x12, 0x13};
+  static const uint8_t prefix3[] = {0xd6, 0x79, 0x09};
+  static const uint8_t suffix3[] = {0x01, 0x04, 0x05, 0x06, 0x07, 0x08, 0x0a, 0x0b, 0x0c, 0x0d, 0x0f};
+  for (uint8_t suffix : suffix1) {
+    if (!CBB_add_u8_length_prefixed(&ids, &id) ||
+        !CBB_add_bytes(&id, prefix1, sizeof(prefix1)) || !CBB_add_u8(&id, suffix)) {
+      return false;
+    }
+  }
+  for (uint8_t suffix : suffix2) {
+    if (!CBB_add_u8_length_prefixed(&ids, &id) ||
+        !CBB_add_bytes(&id, prefix2, sizeof(prefix2)) || !CBB_add_u8(&id, suffix)) {
+      return false;
+    }
+  }
+  for (uint8_t suffix : suffix3) {
+    if (!CBB_add_u8_length_prefixed(&ids, &id) ||
+        !CBB_add_bytes(&id, prefix3, sizeof(prefix3)) || !CBB_add_u8(&id, suffix)) {
+      return false;
+    }
+  }
+  return CBB_flush(compressible);
 }
 
 // kExtensions contains all the supported extensions.
@@ -3266,6 +3350,20 @@ static const struct tls_extension kExtensions[] = {
     // ALPS is negotiated late in |ssl_negotiate_alpn|.
     ignore_parse_clienthello,
     ext_alps_add_serverhello,
+  },
+  {
+    17613,
+    ext_alps_new_add_clienthello,
+    ext_alps_parse_serverhello,
+    ignore_parse_clienthello,
+    ext_alps_new_add_serverhello,
+  },
+  {
+    0xca34,
+    ext_usque_trust_anchors_add_clienthello,
+    forbid_parse_serverhello,
+    ignore_parse_clienthello,
+    dont_add_serverhello,
   },
 };
 

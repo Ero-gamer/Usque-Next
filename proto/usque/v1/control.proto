@@ -38,7 +38,9 @@ enum TransportPolicy {
 enum TlsFingerprint {
   TLS_FINGERPRINT_UNSPECIFIED = 0;
   TLS_FINGERPRINT_DEFAULT = 1;
-  TLS_FINGERPRINT_CHROME131 = 2;
+  // Retired pre-release value. Kept only to avoid reusing a wire number.
+  TLS_FINGERPRINT_CHROME131 = 2 [deprecated = true];
+  TLS_FINGERPRINT_CHROME155 = 3;
 }
 
 enum DataPlaneMode {

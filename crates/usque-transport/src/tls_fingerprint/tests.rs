@@ -198,33 +198,58 @@ fn identity(
         "2001:db8::2".parse().unwrap(),
     )
     .unwrap()
-    .with_fingerprint(TlsFingerprint::Chrome131)
+    .with_fingerprint(TlsFingerprint::Chrome155)
 }
 
-async fn h2_authentication_case(correct_pin: bool) {
+async fn h2_authentication_case(correct_pin: bool, chrome155: bool) {
     use boring::ssl::{SslAcceptor, SslMethod};
     use tokio::time::{Duration, timeout};
 
     let client_key = usque_core::MasqueKeyPair::generate();
     let server_key = usque_core::MasqueKeyPair::generate();
     let wrong_key = usque_core::MasqueKeyPair::generate();
-    let client_identity = identity(
+    let mut client_identity = identity(
         &client_key,
         if correct_pin { &server_key } else { &wrong_key },
     );
+    if chrome155 {
+        client_identity.fingerprint_probe =
+            Some(crate::chrome_fingerprint_tests::Probe::chrome155());
+    }
     let server_identity = identity(&server_key, &client_key);
     let connector = crate::h2::fingerprint_test_connector(&client_identity).unwrap();
     let mut client_config = connector.configure().unwrap();
-    configure_h2_connection(&mut client_config, TlsFingerprint::Chrome131).unwrap();
+    configure_h2_connection(&mut client_config, TlsFingerprint::Chrome155).unwrap();
 
     let mut acceptor = SslAcceptor::mozilla_intermediate_v5(SslMethod::tls()).unwrap();
     crate::h2::configure_client_identity_and_pin(&mut acceptor, &server_identity).unwrap();
+    if chrome155 {
+        // SAFETY: acceptor exclusively owns a live context before SSL creation.
+        unsafe { boring_sys::USQUE_SSL_CTX_set_chrome155_extensions(acceptor.as_ptr(), 1) };
+        acceptor.set_alpn_select_callback(|_, _| Ok(b"h2"));
+    }
     let acceptor = acceptor.build();
+    let server_ssl = boring::ssl::Ssl::new(&acceptor.context().to_owned()).unwrap();
+    if chrome155 {
+        assert_eq!(
+            // SAFETY: live, unshared SSL; BoringSSL copies both bounded slices.
+            unsafe {
+                boring_sys::SSL_add_application_settings(
+                    server_ssl.as_ptr(),
+                    b"h2".as_ptr(),
+                    2,
+                    b"".as_ptr(),
+                    0,
+                )
+            },
+            1
+        );
+    }
     let (client_io, server_io) = tokio::io::duplex(32 * 1024);
     let (client, server) = timeout(Duration::from_secs(5), async {
         tokio::join!(
             tokio_boring::connect(client_config, "example.com", client_io),
-            tokio_boring::accept(&acceptor, server_io)
+            tokio_boring::SslStreamBuilder::new(server_ssl, server_io).accept()
         )
     })
     .await
@@ -233,6 +258,27 @@ async fn h2_authentication_case(correct_pin: bool) {
         let client = client.expect("the pinned peer must be accepted");
         let server = server.expect("the client identity must remain usable");
         assert_eq!(client.ssl().version_str(), "TLSv1.3");
+        if chrome155 {
+            assert!(
+                client_identity
+                    .fingerprint_probe
+                    .as_ref()
+                    .unwrap()
+                    .snapshot()
+                    .authentication_observed()
+            );
+            // SAFETY: both successful streams own live SSL sessions.
+            unsafe {
+                assert_eq!(
+                    boring_sys::SSL_has_application_settings(client.ssl().as_ptr()),
+                    1
+                );
+                assert_eq!(
+                    boring_sys::SSL_has_application_settings(server.ssl().as_ptr()),
+                    1
+                );
+            }
+        }
         let client_certificate = server.ssl().peer_certificate().expect("client certificate");
         assert_eq!(
             client_certificate
@@ -250,12 +296,18 @@ async fn h2_authentication_case(correct_pin: bool) {
 
 #[tokio::test]
 async fn chrome_h2_accepts_pinned_peer_and_sends_client_identity() {
-    h2_authentication_case(true).await;
+    h2_authentication_case(true, false).await;
 }
 
 #[tokio::test]
 async fn chrome_h2_rejects_wrong_endpoint_pin() {
-    h2_authentication_case(false).await;
+    h2_authentication_case(false, false).await;
+}
+
+#[tokio::test]
+async fn chrome155_h2_negotiates_new_alps_and_preserves_mutual_authentication() {
+    h2_authentication_case(true, true).await;
+    h2_authentication_case(false, true).await;
 }
 
 fn transfer_quic_packets(
@@ -282,16 +334,20 @@ fn transfer_quic_packets(
     panic!("QUIC peer exceeded the bounded handshake packet budget");
 }
 
-fn h3_authentication_case(correct_pin: bool) {
+fn h3_authentication_case(correct_pin: bool, chrome155: bool) {
     use boring::ssl::SslMethod;
 
     let client_key = usque_core::MasqueKeyPair::generate();
     let server_key = usque_core::MasqueKeyPair::generate();
     let wrong_key = usque_core::MasqueKeyPair::generate();
-    let client_identity = identity(
+    let mut client_identity = identity(
         &client_key,
         if correct_pin { &server_key } else { &wrong_key },
     );
+    if chrome155 {
+        client_identity.fingerprint_probe =
+            Some(crate::chrome_fingerprint_tests::Probe::chrome155());
+    }
     let server_identity = identity(&server_key, &client_key);
     let (mut client_config, client_pin) = crate::h3::quic_config(&client_identity, 1350).unwrap();
     let mut server_tls = SslContextBuilder::new(SslMethod::tls()).unwrap();
@@ -374,10 +430,33 @@ fn h3_authentication_case(correct_pin: bool) {
 
 #[test]
 fn chrome_h3_accepts_pinned_peer_and_sends_client_identity() {
-    h3_authentication_case(true);
+    h3_authentication_case(true, false);
 }
 
 #[test]
 fn chrome_h3_rejects_wrong_endpoint_pin() {
-    h3_authentication_case(false);
+    h3_authentication_case(false, false);
+}
+
+#[test]
+fn chrome155_h3_preserves_mutual_authentication_and_pin_rejection() {
+    h3_authentication_case(true, true);
+    h3_authentication_case(false, true);
+}
+
+#[test]
+fn chrome155_advertisement_does_not_enable_unsupported_signature_verification() {
+    use boring::ssl::SslMethod;
+    let builder = SslContextBuilder::new(SslMethod::tls()).unwrap();
+    // SAFETY: live, exclusively owned context; each list is one valid u16.
+    unsafe {
+        boring_sys::USQUE_SSL_CTX_set_chrome155_extensions(builder.as_ptr(), 1);
+        for algorithm in [0x0904u16, 0x0905, 0x0906] {
+            assert_eq!(
+                boring_sys::SSL_CTX_set_verify_algorithm_prefs(builder.as_ptr(), &algorithm, 1),
+                0
+            );
+            assert!(!ErrorStack::get().errors().is_empty());
+        }
+    }
 }

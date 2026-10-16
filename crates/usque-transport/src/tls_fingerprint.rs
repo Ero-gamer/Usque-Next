@@ -1,4 +1,4 @@
-//! Fixed Chrome 131 TLS preferences; identity and SPKI verification stay with the caller.
+//! Fixed Chrome 155 TLS preferences; identity and SPKI verification stay with the caller.
 //! Reference: https://github.com/refraction-networking/utls/blob/ff1b50fbbe9a6dff1dcb1cfc0493bd5b0f073f67/u_parrots.go
 use boring::error::ErrorStack;
 use boring::ssl::{
@@ -30,13 +30,16 @@ pub(crate) fn configure_context(
     carrier: Carrier,
     #[cfg(test)] probe: Option<crate::chrome_fingerprint_tests::Probe>,
 ) -> Result<(), ErrorStack> {
-    if profile == TlsFingerprint::Chrome131 {
+    if profile == TlsFingerprint::Chrome155 {
         // set_cipher_list only controls TLS <= 1.2. Pin the TLS 1.3 order and
         // ECH GREASE AEAD independently of AES acceleration on this device.
         // SAFETY: builder exclusively owns a live SSL_CTX before SSL creation.
         // The pinned C adapter only changes this context's handshake preference;
         // cryptographic CPU dispatch continues to use the real hardware flags.
         unsafe { boring_sys::USQUE_SSL_CTX_set_aes_cipher_preference(builder.as_ptr()) };
+        // SAFETY: this context is exclusively owned and has no SSL connections.
+        // Wire additions do not relax supported peer signatures or SPKI checks.
+        unsafe { boring_sys::USQUE_SSL_CTX_set_chrome155_extensions(builder.as_ptr(), 1) };
         builder.set_min_proto_version(Some(match carrier {
             Carrier::H2 => SslVersion::TLS1_2,
             Carrier::H3 => SslVersion::TLS1_3,
@@ -70,14 +73,14 @@ pub(crate) fn configure_context(
     }
     // QUIC owns SSL creation; the infallible ECH GREASE switch is set before
     // its first ClientHello. H2's fallible ALPS setup is done before dialing TLS.
-    let needs_callback = profile == TlsFingerprint::Chrome131 && carrier == Carrier::H3;
+    let needs_callback = profile == TlsFingerprint::Chrome155 && carrier == Carrier::H3;
     #[cfg(test)]
     let needs_callback = needs_callback || probe.is_some();
     if !needs_callback {
         return Ok(());
     }
     builder.set_info_callback(move |ssl, mode, _| {
-        if profile == TlsFingerprint::Chrome131
+        if profile == TlsFingerprint::Chrome155
             && carrier == Carrier::H3
             && mode == SslInfoCallbackMode::HANDSHAKE_START
         {
@@ -113,6 +116,13 @@ pub(crate) fn configure_h2_connection(
 }
 
 struct BrotliDecoder;
+
+#[cfg(test)]
+pub(crate) fn decompress_probe_certificate(input: &[u8]) -> Option<Vec<u8>> {
+    let mut output = Vec::new();
+    BrotliDecoder.decompress(input, &mut output).ok()?;
+    Some(output)
+}
 
 #[derive(Default)]
 struct BrotliBytes(Vec<u8>);

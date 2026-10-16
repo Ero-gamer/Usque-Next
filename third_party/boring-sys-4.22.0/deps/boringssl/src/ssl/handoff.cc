@@ -68,7 +68,8 @@ static bool serialize_features(CBB *out) {
   // removed.
   CBB alps;
   if (!CBB_add_asn1(out, &alps, kHandoffTagALPS) ||
-      !CBB_add_u16(&alps, TLSEXT_TYPE_application_settings)) {
+      !CBB_add_u16(&alps, TLSEXT_TYPE_application_settings) ||
+      !CBB_add_u16(&alps, 17613)) {
     return false;
   }
   return CBB_flush(out);
@@ -222,9 +223,8 @@ static bool apply_remote_features(SSL *ssl, CBS *in) {
     if (!CBS_get_u16(&alps, &id)) {
       return false;
     }
-    // For now, we only support one ALPS code point, so we only need to extract
-    // a boolean signal from the feature list.
-    if (id == TLSEXT_TYPE_application_settings) {
+    // The receiver must support this context's selected ALPS codepoint.
+    if (id == ssl_application_settings_extension(ssl)) {
       supports_alps = true;
       break;
     }

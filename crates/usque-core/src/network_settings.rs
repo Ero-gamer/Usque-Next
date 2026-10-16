@@ -483,14 +483,14 @@ mod tests {
         let mut config = AppConfig::default();
         let previous = config.active_profile().unwrap();
         let mut edit = patch(&config, &["tls_fingerprint"]);
-        edit.values.tls_fingerprint = crate::TlsFingerprint::Chrome131;
+        edit.values.tls_fingerprint = crate::TlsFingerprint::Chrome155;
         // An unrelated stale value must not be copied by a field-scoped edit.
         edit.values.mtu = 1400;
         let stored = merge_patch(&mut config, &edit).unwrap();
         assert_eq!(stored.mtu, previous.mtu);
         assert_eq!(
             config.network.tls_fingerprint,
-            crate::TlsFingerprint::Chrome131
+            crate::TlsFingerprint::Chrome155
         );
         assert_eq!(changed_fields(&previous, &stored), ["tls_fingerprint"]);
         let plan = plan_application(
@@ -504,7 +504,7 @@ mod tests {
         assert_eq!(plan.class, ReconfigureClass::ColdReconnect);
         assert_eq!(
             plan.target.unwrap().tls_fingerprint,
-            crate::TlsFingerprint::Chrome131
+            crate::TlsFingerprint::Chrome155
         );
         let deferred = plan_application(
             None,

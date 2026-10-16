@@ -37,20 +37,33 @@ void main() {
       decodeProfile(Uint8List(0)).tlsFingerprint,
       TlsFingerprint.defaultProfile,
     );
-    for (final value in [0, 1, 2]) {
+    for (final value in [0, 1, 3]) {
       final payload = (ControlPayloadWriter()..enumeration(26, value))
           .takeBytes();
       expect(
         decodeProfile(payload).tlsFingerprint,
-        value == 2 ? TlsFingerprint.chrome131 : TlsFingerprint.defaultProfile,
+        value == 3 ? TlsFingerprint.chrome155 : TlsFingerprint.defaultProfile,
       );
     }
-    for (final value in ['chrome', 'Chrome131', 'defaultProfile', null, 2]) {
+    for (final value in [
+      'chrome',
+      'chrome131',
+      'Chrome155',
+      'defaultProfile',
+      null,
+      2,
+    ]) {
       expect(
         () => UsqueProfile.fromMap({...legacy, 'tls_fingerprint': value}),
         throwsFormatException,
       );
     }
+    expect(
+      () => decodeProfile(
+        (ControlPayloadWriter()..enumeration(26, 2)).takeBytes(),
+      ),
+      throwsA(isA<EngineException>()),
+    );
     expect(
       () => decodeProfile(
         (ControlPayloadWriter()..enumeration(26, 99)).takeBytes(),
@@ -64,11 +77,12 @@ void main() {
     () {
       final packed =
           (ControlPayloadWriter()
-                ..message(48, Uint8List.fromList([1, 2, 2, 99])))
+                ..message(48, Uint8List.fromList([1, 3, 3, 2, 99])))
               .takeBytes();
       final unpacked =
           (ControlPayloadWriter()
                 ..enumeration(48, 1)
+                ..enumeration(48, 3)
                 ..enumeration(48, 2))
               .takeBytes();
       for (final payload in [packed, unpacked]) {
@@ -89,7 +103,7 @@ void main() {
       );
       expect(
         EngineCapabilities.fromMap({
-          'tls_fingerprints': ['default', 'chrome131', 'future'],
+          'tls_fingerprints': ['default', 'chrome155', 'future'],
         }).tlsFingerprints,
         TlsFingerprint.values,
       );
@@ -105,7 +119,7 @@ void main() {
     expect(
       networkSettingsChangedFields(
         profile,
-        profile.copyWith(tlsFingerprint: TlsFingerprint.chrome131),
+        profile.copyWith(tlsFingerprint: TlsFingerprint.chrome155),
       ),
       ['tls_fingerprint'],
     );
@@ -159,12 +173,12 @@ void main() {
       final app = await screen(tester);
       await tester.tap(find.byType(DropdownButtonFormField<TlsFingerprint>));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Chrome 131').last);
+      await tester.tap(find.text('Chrome 155').last);
       await tester.pumpAndSettle();
       expect(app.sharedNetwork.tlsFingerprint, TlsFingerprint.defaultProfile);
       await tester.tap(find.widgetWithText(FilledButton, 'Apply changes'));
       await tester.pumpAndSettle();
-      expect(app.sharedNetwork.tlsFingerprint, TlsFingerprint.chrome131);
+      expect(app.sharedNetwork.tlsFingerprint, TlsFingerprint.chrome155);
       expect(app.networkSettings.state?.deferredFields, ['tls_fingerprint']);
     },
   );
@@ -175,18 +189,18 @@ void main() {
       final app = await screen(
         tester,
         supported: false,
-        value: TlsFingerprint.chrome131,
+        value: TlsFingerprint.chrome155,
       );
       final field = tester.widget<DropdownButtonFormField<TlsFingerprint>>(
         find.byType(DropdownButtonFormField<TlsFingerprint>),
       );
       expect(field.onChanged, isNull);
-      expect(field.initialValue, TlsFingerprint.chrome131);
+      expect(field.initialValue, TlsFingerprint.chrome155);
       expect(
         await app.saveNetwork(app.activeProfile.copyWith(mtu: 1300)),
         isFalse,
       );
-      expect(app.sharedNetwork.tlsFingerprint, TlsFingerprint.chrome131);
+      expect(app.sharedNetwork.tlsFingerprint, TlsFingerprint.chrome155);
       expect(app.lastError, app.strings.get('tls_fingerprint_unsupported'));
     },
   );
@@ -203,7 +217,7 @@ void main() {
       expect(tester.takeException(), isNull);
       await tester.tap(find.byType(DropdownButtonFormField<TlsFingerprint>));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Chrome 131').last);
+      await tester.tap(find.text('Chrome 155').last);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     },

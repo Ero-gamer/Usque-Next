@@ -44,11 +44,12 @@ enum DataPlaneMode {
 enum TransportPolicy { automatic, http3, http2 }
 
 enum TlsFingerprint {
-  defaultProfile('default'),
-  chrome131('chrome131');
+  defaultProfile('default', 1),
+  chrome155('chrome155', 3);
 
-  const TlsFingerprint(this.wireName);
+  const TlsFingerprint(this.wireName, this.protoValue);
   final String wireName;
+  final int protoValue;
 
   static TlsFingerprint? fromWire(Object? value) =>
       values.where((profile) => profile.wireName == value).firstOrNull;

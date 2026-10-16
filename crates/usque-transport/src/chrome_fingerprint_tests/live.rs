@@ -8,7 +8,7 @@ use tokio_util::sync::CancellationToken;
 use usque_core::{AddressFamily, AppConfig, Transport};
 use usque_platform::{SecretRecord, SecretVault, WindowsCredentialVault};
 
-use super::{Carrier, Probe};
+use super::{Carrier, experiment_profiles};
 use crate::h2::{MasqueTlsIdentity, TransportError};
 use crate::socket::noop_socket_protector;
 
@@ -91,7 +91,25 @@ async fn attempt(
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "explicit live WARP permission and USQUE_LIVE_CHROME_PROBE=1, USQUE_LIVE_CONFIG, USQUE_LIVE_ENDPOINT; no TUN"]
 async fn cloudflare_accepts_chrome_h2_and_h3_without_tun() {
-    assert_eq!(std::env::var("USQUE_LIVE_CHROME_PROBE").as_deref(), Ok("1"));
+    run(false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "explicit Chrome155 WARP probe; USQUE_LIVE_CHROME155_PROBE=1 and existing config/endpoint; no TUN"]
+async fn cloudflare_observes_chrome155_h2_h3_without_tun() {
+    run(true).await;
+}
+
+async fn run(chrome155: bool) {
+    assert_eq!(
+        std::env::var(if chrome155 {
+            "USQUE_LIVE_CHROME155_PROBE"
+        } else {
+            "USQUE_LIVE_CHROME_PROBE"
+        })
+        .as_deref(),
+        Ok("1")
+    );
     let config_path = std::env::var_os("USQUE_LIVE_CONFIG").expect("explicit config path");
     let config: AppConfig =
         serde_json::from_slice(&std::fs::read(config_path).expect("read config"))
@@ -108,22 +126,14 @@ async fn cloudflare_accepts_chrome_h2_and_h3_without_tun() {
     let octets = ip.octets();
     assert!(octets[..2] == [162, 159] && matches!(octets[2], 192 | 197 | 198 | 199));
     assert_eq!(endpoint.port(), 443);
-    let identity = identity_from_vault(&config).await;
+    let identity = super::l4_live::l4_identity(&config).await;
     let mut successful = 0;
     for carrier in [Carrier::H2, Carrier::H3] {
+        let mut profiles = experiment_profiles(chrome155);
         for round in 0..3 {
-            // Reverse the adjacent control/candidate order in the middle round.
-            for chrome in if round == 1 {
-                [true, false]
-            } else {
-                [false, true]
-            } {
-                let probe = Probe::new();
-                let mut candidate = identity.clone().with_fingerprint(if chrome {
-                    usque_core::TlsFingerprint::Chrome131
-                } else {
-                    usque_core::TlsFingerprint::Default
-                });
+            for preset in &profiles {
+                let probe = preset.probe();
+                let mut candidate = identity.clone().with_fingerprint(preset.core());
                 candidate.fingerprint_probe = Some(probe.clone());
                 let cancellation = CancellationToken::new();
                 let started = Instant::now();
@@ -144,7 +154,7 @@ async fn cloudflare_accepts_chrome_h2_and_h3_without_tun() {
                     && observation
                         .hello
                         .as_ref()
-                        .is_some_and(|hello| !chrome || hello.verify_chrome(carrier).is_ok());
+                        .is_some_and(|hello| preset.verify(hello, carrier));
                 let accepted = matches!(result, Ok(Ok(())));
                 let transport = match carrier {
                     Carrier::H2 => Transport::Http2,
@@ -164,7 +174,8 @@ async fn cloudflare_accepts_chrome_h2_and_h3_without_tun() {
                     "CHROME_MASQUE_PROBE {}",
                     serde_json::json!({
                         "carrier": transport,
-                        "profile": if chrome { "chrome_131_tls" } else { "default_control" },
+                        "profile": preset.name(),
+                        "authentication": observation.authentication_summary(),
                         "round": round + 1,
                         "elapsed_ms": started.elapsed().as_millis(),
                         "client_hello_verified": profile_valid,
@@ -181,12 +192,15 @@ async fn cloudflare_accepts_chrome_h2_and_h3_without_tun() {
                         "tun": false
                     })
                 );
-                successful += usize::from(accepted && profile_valid && observation.tls_ready);
+                successful +=
+                    usize::from(accepted && profile_valid && observation.authentication_observed());
             }
+            profiles.rotate_left(1);
         }
     }
     assert_eq!(
-        successful, 12,
+        successful,
+        if chrome155 { 18 } else { 12 },
         "all controls and Chrome trials must complete authenticated TLS and CONNECT-IP; inspect sanitized records"
     );
 }

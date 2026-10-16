@@ -4795,8 +4795,8 @@ fn profile_from_proto(source: v1::Profile) -> Result<Profile, ControlServiceErro
         Ok(v1::TlsFingerprint::Unspecified | v1::TlsFingerprint::Default) => {
             usque_core::TlsFingerprint::Default
         }
-        Ok(v1::TlsFingerprint::Chrome131) => usque_core::TlsFingerprint::Chrome131,
-        Err(_) => {
+        Ok(v1::TlsFingerprint::Chrome155) => usque_core::TlsFingerprint::Chrome155,
+        _ => {
             return Err(ControlServiceError::InvalidRequest(
                 "unknown TLS fingerprint".to_owned(),
             ));
@@ -5302,7 +5302,7 @@ fn proxy_to_proto(proxy: &ProxySettings) -> v1::ProxySettings {
 fn tls_fingerprint_to_proto(preset: usque_core::TlsFingerprint) -> i32 {
     match preset {
         usque_core::TlsFingerprint::Default => v1::TlsFingerprint::Default as i32,
-        usque_core::TlsFingerprint::Chrome131 => v1::TlsFingerprint::Chrome131 as i32,
+        usque_core::TlsFingerprint::Chrome155 => v1::TlsFingerprint::Chrome155 as i32,
     }
 }
 
@@ -6816,7 +6816,7 @@ mod tests {
         assert!(capabilities.encrypted_direct_dns);
         assert!(capabilities.quic_migration);
         assert!(capabilities.automatic_pmtu);
-        assert_eq!(capabilities.tls_fingerprints, [1, 2]);
+        assert_eq!(capabilities.tls_fingerprints, [1, 3]);
     }
 
     #[tokio::test]
@@ -9006,9 +9006,11 @@ mod tests {
             profile_from_proto(legacy.clone()).unwrap().tls_fingerprint,
             usque_core::TlsFingerprint::Default
         );
-        legacy.tls_fingerprint = 99;
-        assert!(profile_from_proto(legacy).is_err());
-        assert_eq!(current_capabilities().tls_fingerprints, [1, 2]);
+        for retired_or_unknown in [2, 99] {
+            legacy.tls_fingerprint = retired_or_unknown;
+            assert!(profile_from_proto(legacy.clone()).is_err());
+        }
+        assert_eq!(current_capabilities().tls_fingerprints, [1, 3]);
     }
 
     #[tokio::test]

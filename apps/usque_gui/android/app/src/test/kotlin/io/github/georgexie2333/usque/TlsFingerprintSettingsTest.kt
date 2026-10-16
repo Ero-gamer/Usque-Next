@@ -11,9 +11,9 @@ class TlsFingerprintSettingsTest {
             assertEquals(emptyList<String>(), TlsFingerprintSettings.capabilities(value))
         }
         assertEquals(
-            listOf("default", "chrome131"),
+            listOf("default", "chrome155"),
             TlsFingerprintSettings.capabilities(
-                """{"tls_fingerprints":["default","chrome131","unknown",2,"Chrome131","chrome131"]}""",
+                """{"tls_fingerprints":["default","chrome155","unknown",2,"Chrome155","chrome155"]}""",
             ),
         )
     }
@@ -21,9 +21,9 @@ class TlsFingerprintSettingsTest {
     @Test
     fun connectionUsesTheSavedFingerprint() {
         val requested = """{"id":"a","tls_fingerprint":"default"}"""
-        val saved = """{"profiles":[{"id":"a","tls_fingerprint":"chrome131"}]}"""
+        val saved = """{"profiles":[{"id":"a","tls_fingerprint":"chrome155"}]}"""
         assertEquals(
-            "chrome131",
+            "chrome155",
             JSONObject(NetworkSettingsFields.savedProfile(requested, saved)).getString("tls_fingerprint"),
         )
     }

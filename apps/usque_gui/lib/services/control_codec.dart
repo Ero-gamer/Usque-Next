@@ -128,7 +128,7 @@ class ControlCodec {
       }
       writer.message(25, routing.takeBytes());
     }
-    writer.enumeration(26, profile.tlsFingerprint.index + 1);
+    writer.enumeration(26, profile.tlsFingerprint.protoValue);
     writer.message(17, directDns.takeBytes());
     if (profile.warpDns != const WarpDnsSettings()) {
       writer.message(24, warpDns.takeBytes());
@@ -962,7 +962,7 @@ UsqueProfile _decodeProfile(_ProtoReader reader) {
       case 26:
         tlsFingerprint = switch (reader.varint(field)) {
           0 || 1 => TlsFingerprint.defaultProfile,
-          2 => TlsFingerprint.chrome131,
+          3 => TlsFingerprint.chrome155,
           _ => throw const FormatException('Invalid TLS fingerprint'),
         };
       case 18:
@@ -1833,8 +1833,10 @@ EngineCapabilities _decodeCapabilities(_ProtoReader reader) {
           final value = values == null
               ? reader.varint(field)
               : values._varint();
-          if (value >= 1 && value <= 2) {
-            final fingerprint = TlsFingerprint.values[value - 1];
+          final fingerprint = TlsFingerprint.values
+              .where((fingerprint) => fingerprint.protoValue == value)
+              .firstOrNull;
+          if (fingerprint != null) {
             if (!tlsFingerprints.contains(fingerprint)) {
               tlsFingerprints.add(fingerprint);
             }

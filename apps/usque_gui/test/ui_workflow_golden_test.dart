@@ -1302,7 +1302,7 @@ void main() {
       app.sharedNetwork = app.sharedNetwork.copyWith(
         allowLan: false,
         congestionControl: CongestionControlAlgorithm.bbr3,
-        tlsFingerprint: TlsFingerprint.chrome131,
+        tlsFingerprint: TlsFingerprint.chrome155,
       );
       app.networkSettings.accept(
         NetworkSettingsState(

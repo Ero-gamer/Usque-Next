@@ -23,7 +23,7 @@ For setup and practical tutorials, start with the Wiki: [English](https://github
 | [Routing and Ads](ROUTING.md) | Configure DIRECT, REJECT, PROXY, exceptions and Ads / 配置分流动作、例外与广告拦截 |
 | [Direct DNS](encrypted-direct-dns.md) | Choose System, DoH or DoT and fill in resolver settings / 选择直连 DNS 模式与填写服务器配置 |
 | [WARP® exit DNS](WARP_DNS.md) | Configure Plain DNS, DoH or DoT inside the WARP tunnel / 配置 WARP 隧道内普通 DNS、DoH、DoT |
-| [MASQUE TLS fingerprint](TLS_FINGERPRINT.md) | Choose Default or Chrome 131 for H2/H3 and apply the change / 选择并应用 H2、H3 的默认或 Chrome 131 指纹 |
+| [MASQUE TLS fingerprint](TLS_FINGERPRINT.md) | Choose Default or Chrome 155 for H2/H3 and apply the change / 选择并应用 H2、H3 的默认或 Chrome 155 指纹 |
 | [WARP via WireGuard](WARP_WIREGUARD.md) | Generate/import WARP configurations and edit endpoints / 生成、导入 WARP 配置与编辑端点 |
 | [Chain proxy](CHAIN_PROXY.md) | OpenVPN, WireGuard, WARP via WireGuard, VPN Gate, HTTP, SOCKS5: configure, select and apply / 导入、选用与应用 |
 | Proton VPN over MASQUE: [English](https://github.com/GeorgeXie2333/usque-app/wiki/Proton-VPN-over-MASQUE) / [简体中文](https://github.com/GeorgeXie2333/usque-app/wiki/Proton-VPN-over-MASQUE-zh-CN) | Download a WireGuard configuration, import, apply, verify the exit and troubleshoot / 下载 WireGuard 配置、导入、应用、验证出口与排障 |
@@ -94,6 +94,7 @@ Common terms in these references:
 | Record | Scope / 范围 |
 | --- | --- |
 | [Chrome ClientHello compatibility](CHROME_FINGERPRINT_VALIDATION.md) | Explicit H2/H3 WARP handshake and CONNECT-IP experiment, profile limits and validation / H2、H3 指纹握手与 CONNECT-IP 实测、指纹范围与验证 |
+| [Chrome 155 WARP signature negotiation](CHROME155_WARP_VALIDATION.md) | Default/131/155 H2/H3/L4 comparison and observed certificate/signature algorithms / 默认、131、155 在 H2/H3/L4 的对照及服务端证书与签名算法实测 |
 | [TLS fingerprint implementation validation](TLS_FINGERPRINT_IMPLEMENTATION_VALIDATION.md) | Production setting, parser/authentication checks, native builds and unavailable isolated checks / 正式设置实现、解析与认证检查、原生编译及未运行的隔离验证 |
 | [L4 Chrome fingerprint validation](L4_CHROME_FINGERPRINT_VALIDATION.md) | Consumer L4 CONNECT and verified HTTPS with Default/Chrome, normal and no-AES processes / 默认与 Chrome 指纹在正常及无 AES 进程中的 L4 CONNECT 和 HTTPS 实测 |
 | [Implementation baseline](implementation-baseline.md) | PR-00 source, toolchain, and unavailable-lab baseline / PR-00 基线 |

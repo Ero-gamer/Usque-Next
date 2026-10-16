@@ -1559,6 +1559,11 @@ OPENSSL_EXPORT int SSL_CTX_set_cipher_list(SSL_CTX *ctx, const char *str);
 // Configure the context before creating any SSL connections from it.
 OPENSSL_EXPORT void USQUE_SSL_CTX_set_aes_cipher_preference(SSL_CTX *ctx);
 
+// Enables Chrome 155 ClientHello additions on this context only. This advertises
+// ML-DSA but does not implement it: unsupported peer signatures still fail.
+// Call before creating connections. Zero retains the original extensions.
+OPENSSL_EXPORT void USQUE_SSL_CTX_set_chrome155_extensions(SSL_CTX *ctx, int enabled);
+
 // SSL_set_strict_cipher_list configures the cipher list for |ssl|, evaluating
 // |str| as a cipher string and returning error if |str| contains anything
 // meaningless. It returns one on success and zero on failure.
