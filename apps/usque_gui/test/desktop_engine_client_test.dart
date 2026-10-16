@@ -939,8 +939,8 @@ void main() {
         expect(requestTimeoutForPayload(12), const Duration(seconds: 715));
         expect(requestTimeoutForPayload(14), const Duration(seconds: 715));
         expect(requestTimeoutForPayload(27), const Duration(seconds: 1415));
-        expect(requestTimeoutForPayload(23), const Duration(seconds: 60));
-        expect(requestTimeoutForPayload(26), const Duration(seconds: 60));
+        expect(requestTimeoutForPayload(23), const Duration(seconds: 240));
+        expect(requestTimeoutForPayload(26), const Duration(seconds: 180));
         expect(requestTimeoutForPayload(20), const Duration(seconds: 20));
         expect(requestTimeoutForPayload(21), const Duration(seconds: 15));
         expect(requestTimeoutForPayload(22), const Duration(seconds: 30));

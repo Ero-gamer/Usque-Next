@@ -894,9 +894,9 @@ class DesktopEngineClient
 @visibleForTesting
 Duration requestTimeoutForPayload(int payloadField) {
   switch (payloadField) {
+    case 26:
     case 49:
-      // Four bounded registration HTTP requests plus local commit margin.
-      return const Duration(seconds: 90);
+      return identityRegistrationTimeout;
     case 50:
       return const Duration(seconds: 5);
     case 12:
@@ -908,10 +908,11 @@ Duration requestTimeoutForPayload(int payloadField) {
       // A legacy cold reconfigure may connect the target and then roll back.
       return const Duration(seconds: 1415);
     case 23:
-    case 26:
     case 29:
     case 30:
-      return const Duration(seconds: 60);
+      // Replacing credentials can also revoke the retired identity before
+      // returning. Keep that cleanup outside the registration HTTP budget.
+      return identityRegistrationTimeout + const Duration(seconds: 60);
     case 20:
       return const Duration(seconds: 20);
     case 21:

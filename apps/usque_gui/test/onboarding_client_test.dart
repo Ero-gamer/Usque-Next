@@ -61,7 +61,7 @@ void main() {
           payload: payload.takeBytes(),
         ),
       );
-      expect(requestTimeoutForPayload(49), const Duration(seconds: 90));
+      expect(requestTimeoutForPayload(49), const Duration(seconds: 180));
       expect(requestTimeoutForPayload(50), const Duration(seconds: 5));
     },
   );

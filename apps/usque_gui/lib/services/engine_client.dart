@@ -12,6 +12,10 @@ import '../models/onboarding_models.dart';
 export '../models/network_settings.dart';
 export '../models/onboarding_models.dart';
 
+/// Four native registration steps may each try two hosts for 20 seconds each.
+/// Allow another 20 seconds for credential persistence and result delivery.
+const identityRegistrationTimeout = Duration(seconds: 180);
+
 abstract interface class InitialIdentityClient {
   Future<InitialIdentityState> initializeIdentity(
     UsqueProfile profile, {
@@ -332,7 +336,7 @@ class MethodChannelEngineClient
       'callback_uri': callbackUri,
       'terms_accepted': true,
       'locale': PlatformDispatcher.instance.locale.toLanguageTag(),
-    }).timeout(const Duration(seconds: 90));
+    }).timeout(identityRegistrationTimeout);
     if (value == null) {
       throw const EngineException(
         'INITIAL_IDENTITY_UNSUPPORTED',
