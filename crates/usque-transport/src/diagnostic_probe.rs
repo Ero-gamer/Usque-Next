@@ -1,4 +1,4 @@
-//! Explicit Deep Doctor probes; no CONNECT-IP, resolver discovery, or OS mutation.
+//! Explicit Deep Doctor probes; no CONNECT-IP or OS mutation.
 use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
 use bytes::Bytes;
@@ -169,22 +169,52 @@ pub fn h3_probe_endpoints(profile: &Profile) -> Vec<SocketAddr> {
 
 /// Preset-aware discovery with the same authenticated tier and physical DNS
 /// authorization as a connection. No tunnel is constructed.
+pub struct ResolvedH3ProbeEndpoints {
+    endpoints: Vec<SocketAddr>,
+    generation: Option<u64>,
+}
+
+impl ResolvedH3ProbeEndpoints {
+    /// Uses the discovery generation through socket admission and every packet.
+    pub async fn probe(
+        &self,
+        sni: &str,
+        identity: &MasqueTlsIdentity,
+        protector: Arc<dyn SocketProtector>,
+        cancellation: CancellationToken,
+    ) -> NetworkProbeResult {
+        probe_h3_candidates_for_generation(
+            &self.endpoints,
+            sni,
+            identity,
+            protector,
+            cancellation,
+            self.generation,
+        )
+        .await
+    }
+}
+
+/// Discovery and its exact network generation are an inseparable probe input.
 pub async fn h3_probe_endpoints_resolved(
     profile: &Profile,
     identity: &MasqueTlsIdentity,
     protector: Arc<dyn SocketProtector>,
     cancellation: CancellationToken,
-) -> Result<Vec<SocketAddr>, NetworkProbeResult> {
+) -> Result<ResolvedH3ProbeEndpoints, NetworkProbeResult> {
+    let generation = protector.network_generation();
     if profile.endpoint.preset_region.is_none() {
-        return Ok(h3_probe_endpoints(profile));
+        return Ok(ResolvedH3ProbeEndpoints {
+            endpoints: h3_probe_endpoints(profile),
+            generation,
+        });
     }
-    let generation = protector.network_generation().unwrap_or_default();
     let resolution = tokio::select! {
         biased;
         _ = cancellation.cancelled() => return Err(NetworkProbeResult::Cancelled),
         result = crate::endpoint_preset::resolve(profile, identity, &protector) => result,
     };
-    if protector.network_generation().unwrap_or_default() != generation {
+    if protector.network_generation() != generation {
         return Err(NetworkProbeResult::NetworkChanged);
     }
     let mut endpoints = match resolution {
@@ -198,7 +228,10 @@ pub async fn h3_probe_endpoints_resolved(
     if profile.ip_policy == IpPolicy::PreferIpv6 {
         endpoints.push(profile.endpoint.ipv4_socket());
     }
-    Ok(endpoints)
+    Ok(ResolvedH3ProbeEndpoints {
+        endpoints,
+        generation,
+    })
 }
 
 /// Serial, at-most-two-family handshake checks within one 3.8 second deadline.
@@ -211,6 +244,37 @@ pub async fn probe_h3_handshake_candidates(
     cancellation: CancellationToken,
 ) -> NetworkProbeResult {
     let generation = protector.network_generation();
+    probe_h3_candidates_for_generation(
+        endpoints,
+        sni,
+        identity,
+        protector,
+        cancellation,
+        generation,
+    )
+    .await
+}
+
+async fn probe_h3_candidates_for_generation(
+    endpoints: &[SocketAddr],
+    sni: &str,
+    identity: &MasqueTlsIdentity,
+    protector: Arc<dyn SocketProtector>,
+    cancellation: CancellationToken,
+    generation: Option<u64>,
+) -> NetworkProbeResult {
+    if cancellation.is_cancelled() {
+        return NetworkProbeResult::Cancelled;
+    }
+    if protector.network_generation() != generation {
+        return NetworkProbeResult::NetworkChanged;
+    }
+    // The QUIC handshake also snapshots its protector. Fence admission so a
+    // change between that snapshot and socket setup cannot rebind old AAAA.
+    let protector = match generation {
+        Some(generation) => crate::endpoint_preset::for_generation(protector, generation),
+        None => protector,
+    };
     let candidates = endpoints
         .iter()
         .copied()
@@ -305,7 +369,123 @@ pub(crate) fn elapsed_ms(started: Instant) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+
+    struct DiscoveryProtector {
+        generation: AtomicU64,
+        change_on_family_check: AtomicBool,
+        generation_reads_until_change: AtomicUsize,
+        protections: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl SocketProtector for DiscoveryProtector {
+        fn protect(&self, _: crate::SocketHandle) -> Result<(), String> {
+            panic!("a stale probe must never open an admitted socket")
+        }
+        fn network_generation(&self) -> Option<u64> {
+            if self.generation_reads_until_change.fetch_update(
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+                |remaining| remaining.checked_sub(1),
+            ) == Ok(1)
+            {
+                self.generation.store(2, Ordering::SeqCst);
+            }
+            Some(self.generation.load(Ordering::SeqCst))
+        }
+        fn endpoint_family_available(&self, _: SocketAddr) -> Option<bool> {
+            if self.change_on_family_check.swap(false, Ordering::SeqCst) {
+                self.generation.store(2, Ordering::SeqCst);
+            }
+            Some(true)
+        }
+        async fn resolve_endpoint_preset(
+            &self,
+            _: &str,
+            port: u16,
+            expected: u64,
+        ) -> Result<Vec<SocketAddr>, String> {
+            assert_eq!(self.network_generation(), Some(expected));
+            Ok(vec![SocketAddr::new("2001:db8::8".parse().unwrap(), port)])
+        }
+        async fn protect_masque_endpoint_generation(
+            &self,
+            _: crate::SocketHandle,
+            _: SocketAddr,
+            _: crate::DirectProtocol,
+            _: u64,
+        ) -> Result<crate::DirectEgressLease, String> {
+            self.protections.fetch_add(1, Ordering::SeqCst);
+            Err("a stale candidate reached socket admission".into())
+        }
+    }
+
+    #[tokio::test]
+    async fn resolved_probe_keeps_its_generation_until_handshake_admission() {
+        let key = usque_core::MasqueKeyPair::generate();
+        let mut identity = MasqueTlsIdentity::new(
+            key.private_sec1_der().unwrap(),
+            &key.public_spki_der().unwrap(),
+            "172.16.0.2".parse().unwrap(),
+            "2001:db8::2".parse().unwrap(),
+        )
+        .unwrap();
+        identity.provider = Some(usque_core::IdentityProvider::Consumer);
+        identity.entitlement = Some(usque_core::ConsumerEntitlement::Free);
+        for policy in [IpPolicy::Ipv6Only, IpPolicy::PreferIpv6] {
+            for change_stage in 0..3 {
+                let protector = Arc::new(DiscoveryProtector {
+                    generation: AtomicU64::new(1),
+                    change_on_family_check: AtomicBool::new(false),
+                    generation_reads_until_change: AtomicUsize::new(0),
+                    protections: AtomicUsize::new(0),
+                });
+                let platform: Arc<dyn SocketProtector> = protector.clone();
+                let mut profile = Profile {
+                    ip_policy: policy,
+                    ..Profile::default()
+                };
+                profile.endpoint.selection = usque_core::EndpointSelection::Custom;
+                profile.endpoint.preset_region = Some(usque_core::EndpointPresetRegion::Us);
+                let endpoints = h3_probe_endpoints_resolved(
+                    &profile,
+                    &identity,
+                    platform.clone(),
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap();
+                match change_stage {
+                    0 => protector.generation.store(2, Ordering::SeqCst),
+                    1 => protector
+                        .change_on_family_check
+                        .store(true, Ordering::SeqCst),
+                    2 => {
+                        // Change at the nested handshake snapshot, after the
+                        // runner's admission check. Its new generation must
+                        // never authorize the previous discovery's address.
+                        protector
+                            .generation_reads_until_change
+                            .store(3, Ordering::SeqCst);
+                    }
+                    _ => unreachable!(),
+                }
+                assert_eq!(
+                    endpoints
+                        .probe(
+                            "example.invalid",
+                            &identity,
+                            platform,
+                            CancellationToken::new()
+                        )
+                        .await,
+                    NetworkProbeResult::NetworkChanged,
+                );
+                assert_eq!(protector.protections.load(Ordering::SeqCst), 0);
+            }
+        }
+    }
 
     #[test]
     fn diagnostic_family_order_matches_normal_policy_and_never_expands_forced_families() {

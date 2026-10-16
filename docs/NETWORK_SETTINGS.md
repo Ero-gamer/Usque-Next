@@ -127,6 +127,11 @@ source field 24 are append-only. Missing Engine or Windows Agent support is an
 explicit upgrade error. Windows uses separate exact DNS/data leases and
 volatile candidate authorization scoped to the operation and physical-network
 generation; retained observation anchors grant no preset data authorization.
+Physical DNS servers share one four-second resolution budget, reserving time
+for backup resolvers. Windows verifies each DNS server's owning interface and
+constrained route, including on-link DNS whose family has no Internet anchor.
+Diagnostic handshakes retain the discovery generation through socket admission;
+their fallback check distinguishes IPv6-to-IPv4 attempts from H3-to-H2 fallback.
 
 进入 **设置 → 高级网络设置 → 端点 → 自定义 → 内置预设**，选择国家后点击
 **应用修改**。可选择美国、德国、芬兰，国家由所有账号共享，按已验证的账号自动匹配。

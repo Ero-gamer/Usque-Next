@@ -92,14 +92,9 @@ impl DiagnosticCheck for DeepCheck {
                                 Ok(endpoints) => endpoints,
                                 Err(result) => return result,
                             };
-                            usque_transport::probe_h3_handshake_candidates(
-                                &endpoints,
-                                sni,
-                                identity,
-                                Arc::clone(&probes.protector),
-                                stop.clone(),
-                            )
-                            .await
+                            endpoints
+                                .probe(sni, identity, Arc::clone(&probes.protector), stop.clone())
+                                .await
                         })
                         .await
                         .unwrap_or(NetworkProbeResult::TimedOut)

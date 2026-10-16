@@ -995,7 +995,16 @@ where
                 }
             }
         }
-        let interface = select_direct_egress_interface(&physical, remote, purpose)?;
+        let interface = select_direct_egress_interface(&physical, remote, purpose, |interface| {
+            let (tunnel_luid, _) = physical_route_context(&journal)?;
+            network::physical_dns_route_available(
+                remote,
+                interface.interface_luid,
+                interface.interface_index,
+                tunnel_luid,
+            )
+            .map_err(|error| ServiceError::PhysicalNetwork(error.to_string()))
+        })?;
         let interface_luid = interface.interface_luid;
         let key = DirectEgressKey {
             operation_id,
@@ -2346,40 +2355,41 @@ fn select_direct_egress_interface(
     physical: &agent_v1::PhysicalNetworkInfo,
     remote: SocketAddr,
     purpose: EgressPurpose,
+    mut dns_route_available: impl FnMut(&agent_v1::PhysicalInterface) -> Result<bool, ServiceError>,
 ) -> Result<&agent_v1::PhysicalInterface, ServiceError> {
     let family_mask = if remote.is_ipv4() { 1 } else { 2 };
-    physical
-        .interfaces
-        .iter()
-        .find(|interface| {
-            if interface.address_family_mask & family_mask == 0 {
-                return false;
+    for interface in &physical.interfaces {
+        if purpose != EgressPurpose::PresetDns {
+            if interface.address_family_mask & family_mask != 0 {
+                return Ok(interface);
             }
-            if purpose != EgressPurpose::PresetDns {
-                return true;
-            }
-            if let SocketAddr::V6(address) = remote
-                && (address.ip().is_unicast_link_local() && address.scope_id() == 0
-                    || address.scope_id() != 0 && address.scope_id() != interface.interface_index)
-            {
-                return false;
-            }
-            interface.dns_servers.iter().any(|server| {
-                server
-                    .parse::<std::net::IpAddr>()
-                    .is_ok_and(|ip| ip == remote.ip())
-            })
-        })
-        .ok_or_else(|| {
-            if purpose == EgressPurpose::PresetDns {
-                ServiceError::DirectEgressTarget
-            } else {
-                ServiceError::PhysicalNetwork(format!(
-                    "no verified physical interface supports {}",
-                    if remote.is_ipv6() { "IPv6" } else { "IPv4" }
-                ))
-            }
-        })
+            continue;
+        }
+        if let SocketAddr::V6(address) = remote
+            && (address.ip().is_unicast_link_local() && address.scope_id() == 0
+                || address.scope_id() != 0 && address.scope_id() != interface.interface_index)
+        {
+            continue;
+        }
+        // DNS ownership and an actual constrained route are authoritative.
+        // The observation mask only records Internet endpoint route families.
+        if interface.dns_servers.iter().any(|server| {
+            server
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip == remote.ip())
+        }) && dns_route_available(interface)?
+        {
+            return Ok(interface);
+        }
+    }
+    Err(if purpose == EgressPurpose::PresetDns {
+        ServiceError::DirectEgressTarget
+    } else {
+        ServiceError::PhysicalNetwork(format!(
+            "no verified physical interface supports {}",
+            if remote.is_ipv6() { "IPv6" } else { "IPv4" }
+        ))
+    })
 }
 
 fn validate_direct_context<'a>(
@@ -3041,7 +3051,8 @@ mod tests {
                 select_direct_egress_interface(
                     &physical,
                     target.parse().unwrap(),
-                    EgressPurpose::PresetDns
+                    EgressPurpose::PresetDns,
+                    |_| Ok(true),
                 )
                 .unwrap()
                 .interface_luid,
@@ -3053,7 +3064,8 @@ mod tests {
                 select_direct_egress_interface(
                     &physical,
                     target.parse().unwrap(),
-                    EgressPurpose::PresetDns
+                    EgressPurpose::PresetDns,
+                    |_| panic!("unowned or unscoped DNS must not reach route admission"),
                 )
                 .is_err()
             );
@@ -3062,19 +3074,89 @@ mod tests {
             select_direct_egress_interface(
                 &physical,
                 "9.9.9.9:443".parse().unwrap(),
-                EgressPurpose::Generic
+                EgressPurpose::Generic,
+                |_| panic!("generic egress retains its observation-family restriction"),
             )
             .unwrap()
             .interface_luid,
             111,
         );
-        let mut unavailable = physical;
-        unavailable.interfaces[1].address_family_mask = 1;
+        let mut dns_only_family = physical;
+        dns_only_family.interfaces[1].address_family_mask = 1;
+        assert_eq!(
+            select_direct_egress_interface(
+                &dns_only_family,
+                "[fe80::53%22]:53".parse().unwrap(),
+                EgressPurpose::PresetDns,
+                |_| Ok(true),
+            )
+            .unwrap()
+            .interface_luid,
+            222,
+        );
         assert!(
             select_direct_egress_interface(
-                &unavailable,
+                &dns_only_family,
                 "[fe80::53%22]:53".parse().unwrap(),
-                EgressPurpose::PresetDns
+                EgressPurpose::PresetDns,
+                |_| Ok(false),
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn preset_dns_uses_a_verified_on_link_family_without_an_internet_anchor() {
+        let physical = agent_v1::PhysicalNetworkInfo {
+            generation: 42,
+            interfaces: vec![
+                agent_v1::PhysicalInterface {
+                    interface_luid: 111,
+                    interface_index: 11,
+                    address_family_mask: 2,
+                    dns_servers: vec!["192.0.2.53".into()],
+                },
+                agent_v1::PhysicalInterface {
+                    interface_luid: 222,
+                    interface_index: 22,
+                    address_family_mask: 2,
+                    dns_servers: vec!["192.0.2.53".into()],
+                },
+            ],
+        };
+        let mut inspected = Vec::new();
+        assert_eq!(
+            select_direct_egress_interface(
+                &physical,
+                "192.0.2.53:53".parse().unwrap(),
+                EgressPurpose::PresetDns,
+                |interface| {
+                    inspected.push(interface.interface_luid);
+                    Ok(interface.interface_luid == 222)
+                },
+            )
+            .unwrap()
+            .interface_luid,
+            222,
+        );
+        assert_eq!(inspected, [111, 222]);
+        for purpose in [EgressPurpose::Generic, EgressPurpose::PresetMasque] {
+            assert!(
+                select_direct_egress_interface(
+                    &physical,
+                    "192.0.2.53:53".parse().unwrap(),
+                    purpose,
+                    |_| panic!("only DNS may use the constrained-route exception"),
+                )
+                .is_err()
+            );
+        }
+        assert!(
+            select_direct_egress_interface(
+                &physical,
+                "192.0.2.53:53".parse().unwrap(),
+                EgressPurpose::PresetDns,
+                |_| Err(ServiceError::DirectEgressNotReady),
             )
             .is_err()
         );

@@ -1829,11 +1829,24 @@ pub async fn resolve_endpoint_preset_aaaa<S: SocketProtector + ?Sized>(
     let wire = build_host_query(host, 28, next_udp_port())?;
     let query = parse_query(&wire)?;
     let deadline = tokio::time::Instant::now() + DNS_TIMEOUT;
-    for server in protector.physical_dns_servers().into_iter().take(16) {
-        if server.port() == 0 || server.ip().is_unspecified() || server.ip().is_multicast() {
-            continue;
+    let servers = protector
+        .physical_dns_servers()
+        .into_iter()
+        .take(16)
+        .filter(|server| {
+            server.port() != 0 && !server.ip().is_unspecified() && !server.ip().is_multicast()
+        })
+        .collect::<Vec<_>>();
+    for (index, server) in servers.iter().copied().enumerate() {
+        let now = tokio::time::Instant::now();
+        let remaining = deadline.saturating_duration_since(now);
+        if remaining.is_zero() {
+            break;
         }
-        let response = timeout_at_preset(deadline, async {
+        // Keep one shared budget, but reserve a response window for every
+        // remaining resolver. A silent first server must not starve backups.
+        let attempt_deadline = now + remaining / (servers.len() - index) as u32;
+        let response = timeout_at_preset(attempt_deadline, async {
             let response = preset_dns_udp(protector, server, &wire, expected_generation).await?;
             if response_is_truncated(&response) {
                 preset_dns_tcp(protector, server, &wire, expected_generation).await
@@ -3311,7 +3324,7 @@ pub(crate) mod tests {
     }
 
     struct PresetDnsProtector {
-        server: SocketAddr,
+        servers: Vec<SocketAddr>,
         active: Arc<std::sync::atomic::AtomicUsize>,
     }
     struct PresetDnsLease(Arc<std::sync::atomic::AtomicUsize>);
@@ -3326,7 +3339,7 @@ pub(crate) mod tests {
             panic!("preset DNS must use its distinct exact-generation lease")
         }
         fn physical_dns_servers(&self) -> Vec<SocketAddr> {
-            vec![self.server]
+            self.servers.clone()
         }
         fn network_generation(&self) -> Option<u64> {
             Some(7)
@@ -3338,10 +3351,10 @@ pub(crate) mod tests {
             protocol: DirectProtocol,
             generation: u64,
         ) -> Result<crate::socket::DirectEgressLease, String> {
-            assert_eq!(remote, self.server);
+            assert!(self.servers.contains(&remote));
             assert_eq!(protocol, DirectProtocol::Udp);
             assert_eq!(generation, 7);
-            self.active.fetch_add(1, Ordering::SeqCst);
+            assert_eq!(self.active.fetch_add(1, Ordering::SeqCst), 0);
             Ok(crate::socket::DirectEgressLease::hold_for_generation(
                 PresetDnsLease(self.active.clone()),
                 generation,
@@ -3354,7 +3367,7 @@ pub(crate) mod tests {
         let server = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let protector = PresetDnsProtector {
-            server: server.local_addr().unwrap(),
+            servers: vec![server.local_addr().unwrap()],
             active: active.clone(),
         };
         let task = tokio::spawn(async move {
@@ -3385,11 +3398,49 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn preset_dns_uses_a_backup_within_the_shared_connection_budget() {
+        let blackhole = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let backup = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let protector = PresetDnsProtector {
+            servers: vec![
+                blackhole.local_addr().unwrap(),
+                backup.local_addr().unwrap(),
+            ],
+            active: active.clone(),
+        };
+        let task = tokio::spawn(async move {
+            let mut wire = [0; 4096];
+            let (size, peer) = backup.recv_from(&mut wire).await.unwrap();
+            let request = &wire[..size];
+            assert_eq!(parse_query(request).unwrap().questions[0].query_type, 28);
+            let mut response = error_response(request, 0);
+            response[6..8].copy_from_slice(&1_u16.to_be_bytes());
+            response.extend([0xc0, 12, 0, 28, 0, 1, 0, 0, 0, 60, 0, 16]);
+            response.extend("2001:db8::8".parse::<Ipv6Addr>().unwrap().octets());
+            backup.send_to(&response, peer).await.unwrap();
+        });
+        let addresses = tokio::time::timeout(
+            crate::endpoint_preset::RESOLUTION_TIMEOUT,
+            resolve_endpoint_preset_aaaa(&protector, "us.v6.free.orangesky.dev", 443, 7),
+        )
+        .await
+        .expect("the first silent DNS must leave time for the backup")
+        .unwrap();
+        assert_eq!(
+            addresses,
+            ["[2001:db8::8]:443".parse::<SocketAddr>().unwrap()]
+        );
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+        task.await.unwrap();
+    }
+
+    #[tokio::test]
     async fn cancelled_preset_dns_drops_socket_and_bootstrap_lease() {
         let server = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let protector = PresetDnsProtector {
-            server: server.local_addr().unwrap(),
+            servers: vec![server.local_addr().unwrap()],
             active: active.clone(),
         };
         let mut resolving = Box::pin(resolve_endpoint_preset_aaaa(

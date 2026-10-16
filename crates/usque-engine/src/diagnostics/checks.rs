@@ -454,10 +454,7 @@ impl PassiveCheck {
                     && context.connection.transport == Some(Transport::Http2))
                     || context.timeline.events.iter().any(|event| {
                         event.event_type == ConnectionEventType::FallbackStarted
-                            && event
-                                .failure
-                                .as_ref()
-                                .is_some_and(|failure| !failure.fallback_allowed)
+                            && !fallback_event_permitted(event)
                     });
                 if invalid {
                     failed(
@@ -893,6 +890,26 @@ pub(crate) fn mode_skipped_finding(check: &dyn DiagnosticCheck) -> DiagnosticFin
     )
 }
 
+fn fallback_event_permitted(event: &usque_transport::ConnectionEvent) -> bool {
+    let Some(failure) = &event.failure else {
+        return true;
+    };
+    // fallback_allowed describes H3 -> H2, not a preset's policy-checked
+    // IPv6 -> IPv4 attempt. Keep the original failure metadata authoritative.
+    let address_family_fallback = event.stage == Some(TransportStage::EndpointResolution)
+        && event.transport.is_none()
+        && event.address_family == Some(usque_core::AddressFamily::Ipv4)
+        && failure.address_family == Some(usque_core::AddressFamily::Ipv6);
+    if address_family_fallback {
+        failure.retryable
+            && failure.code != TransportFailureCode::PhysicalNetworkChanged
+            && failure.action() != usque_core::FailureAction::Stop
+            && failure.code != TransportFailureCode::EndpointPinMismatch
+    } else {
+        failure.fallback_allowed
+    }
+}
+
 fn connected_or_reconnecting(snapshot: &ConnectionSnapshot) -> bool {
     matches!(
         snapshot.phase,
@@ -1067,6 +1084,86 @@ mod tests {
     use usque_core::{FrontendStatus, Statistics};
 
     use super::*;
+
+    #[tokio::test]
+    async fn preset_family_fallback_is_distinct_from_protocol_fallback() {
+        for code in [
+            TransportFailureCode::PhysicalIpv6Unavailable,
+            TransportFailureCode::PhysicalDnsUnavailable,
+            TransportFailureCode::H2TcpConnectFailed,
+            TransportFailureCode::H2TlsFailed,
+        ] {
+            let failure = TransportFailure::new(code, TransportStage::EndpointResolution)
+                .on_path(Transport::Http2, usque_core::AddressFamily::Ipv6);
+            assert!(!failure.fallback_allowed);
+            let telemetry = usque_transport::ConnectionTelemetry::default();
+            telemetry.record(
+                ConnectionEventType::FallbackStarted,
+                Some(TransportStage::EndpointResolution),
+                usque_transport::ConnectionEventPath::new(
+                    None,
+                    Some(usque_core::AddressFamily::Ipv4),
+                ),
+                None,
+                Some(failure),
+            );
+            let mut context = context_with_unknown_platform_state();
+            context.timeline = telemetry.snapshot();
+            assert_eq!(
+                check(PassiveCheckKind::FallbackPolicy)
+                    .run(&context, CancellationToken::new())
+                    .await
+                    .status,
+                DiagnosticCheckStatus::Passed,
+                "{code:?} permits a different endpoint family",
+            );
+            context.timeline.events[0].stage = Some(TransportStage::SocketConnect);
+            assert_eq!(
+                check(PassiveCheckKind::FallbackPolicy)
+                    .run(&context, CancellationToken::new())
+                    .await
+                    .status,
+                DiagnosticCheckStatus::Failed,
+                "{code:?} still forbids a protocol fallback",
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn preset_family_fallback_never_hides_terminal_or_stale_failures() {
+        for code in [
+            TransportFailureCode::EndpointPinMismatch,
+            TransportFailureCode::IdentityInvalid,
+            TransportFailureCode::AuthenticationFailed,
+            TransportFailureCode::SocketProtectionFailed,
+            TransportFailureCode::PhysicalNetworkChanged,
+        ] {
+            let telemetry = usque_transport::ConnectionTelemetry::default();
+            telemetry.record(
+                ConnectionEventType::FallbackStarted,
+                Some(TransportStage::EndpointResolution),
+                usque_transport::ConnectionEventPath::new(
+                    None,
+                    Some(usque_core::AddressFamily::Ipv4),
+                ),
+                None,
+                Some(
+                    TransportFailure::new(code, TransportStage::EndpointResolution)
+                        .on_path(Transport::Http3, usque_core::AddressFamily::Ipv6),
+                ),
+            );
+            let mut context = context_with_unknown_platform_state();
+            context.timeline = telemetry.snapshot();
+            let finding = check(PassiveCheckKind::FallbackPolicy)
+                .run(&context, CancellationToken::new())
+                .await;
+            assert_eq!(finding.status, DiagnosticCheckStatus::Failed, "{code:?}");
+            assert_eq!(
+                finding.failure.unwrap().code,
+                TransportFailureCode::Internal
+            );
+        }
+    }
 
     #[test]
     fn platform_and_probe_findings_keep_the_actual_runtime_identity() {

@@ -272,14 +272,9 @@ fn run_probe(
                 } else {
                     &profile.endpoint.sni
                 };
-                usque_transport::probe_h3_handshake_candidates(
-                    &endpoints,
-                    sni,
-                    &identity,
-                    protector,
-                    cancellation,
-                )
-                .await
+                endpoints
+                    .probe(sni, &identity, protector, cancellation)
+                    .await
             })
             .await
             .unwrap_or(ResultCode::TimedOut)

@@ -85,8 +85,8 @@ compile_error!("fault-injection is restricted to test/debug lab builds");
 
 pub use data_plane::{ChainExitStart, DataPlaneRuntime, TunPacketIo, VpnGateStart};
 pub use diagnostic_probe::{
-    NetworkProbeResult, PROBE_IO_TIMEOUT as NETWORK_PROBE_IO_TIMEOUT, h3_probe_endpoints,
-    h3_probe_endpoints_resolved, probe_encrypted_dns, probe_h3_handshake,
+    NetworkProbeResult, PROBE_IO_TIMEOUT as NETWORK_PROBE_IO_TIMEOUT, ResolvedH3ProbeEndpoints,
+    h3_probe_endpoints, h3_probe_endpoints_resolved, probe_encrypted_dns, probe_h3_handshake,
     probe_h3_handshake_candidates,
 };
 pub use encrypted_dns::{DirectDnsError, DirectDnsQueryContext, DirectDnsResolver};
@@ -128,8 +128,8 @@ pub use socks5::Socks5Runtime;
 pub use split_dns::{SPLIT_DNS_IPV4, SPLIT_DNS_IPV6};
 pub use split_dns::{resolve_endpoint_preset_aaaa, resolve_physical_host};
 pub use telemetry::{
-    CONNECTION_TIMELINE_CAPACITY, ConnectionEvent, ConnectionEventType, ConnectionMetrics,
-    ConnectionTelemetry, ConnectionTimelineSnapshot,
+    CONNECTION_TIMELINE_CAPACITY, ConnectionEvent, ConnectionEventPath, ConnectionEventType,
+    ConnectionMetrics, ConnectionTelemetry, ConnectionTimelineSnapshot,
 };
 pub use udp_io::{
     PooledUdpBuffer, ReceivedDatagram, RecvBatch, SendDatagram, UDP_RECEIVE_SLOT_SIZE,

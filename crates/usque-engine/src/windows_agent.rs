@@ -420,12 +420,9 @@ impl WindowsVpnSocketProtector {
             .await
             .map_err(|error| self.socket_setup_error("VERIFY_PHYSICAL_NETWORK", error))?;
         self.observe_physical_snapshot(&current);
-        let family_mask = if remote.is_ipv4() { 1 } else { 2 };
         if current.generation != agent_generation
             || !current.interfaces.iter().any(|interface| {
-                interface.interface_luid == lease.interface_luid
-                    && interface.interface_index == lease.interface_index
-                    && interface.address_family_mask & family_mask != 0
+                direct_egress_interface_matches(interface, &lease, remote, purpose)
             })
         {
             return Err(STALE_GENERATION_REASON.to_owned());
@@ -715,6 +712,37 @@ fn bind_socket_to_interface(
     } else {
         Ok(())
     }
+}
+
+fn direct_egress_interface_matches(
+    interface: &agent_v1::PhysicalInterface,
+    lease: &agent_v1::DirectEgressLease,
+    remote: SocketAddr,
+    purpose: agent_v1::DirectEgressPurpose,
+) -> bool {
+    if interface.interface_luid != lease.interface_luid
+        || interface.interface_index != lease.interface_index
+    {
+        return false;
+    }
+    if purpose != agent_v1::DirectEgressPurpose::PresetDns {
+        return interface.address_family_mask & if remote.is_ipv4() { 1 } else { 2 } != 0;
+    }
+    // The Agent already verified the exact DNS route on this NIC. Its Internet
+    // observation mask cannot rule out an on-link DNS address family.
+    remote.port() == 53
+        && interface.dns_servers.iter().any(|server| {
+            server
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|address| address == remote.ip())
+        })
+        && match remote {
+            SocketAddr::V6(address) => {
+                (!address.ip().is_unicast_link_local() || address.scope_id() != 0)
+                    && (address.scope_id() == 0 || address.scope_id() == interface.interface_index)
+            }
+            SocketAddr::V4(_) => true,
+        }
 }
 
 fn physical_dns_endpoints(info: &PhysicalNetworkInfo) -> Result<Vec<SocketAddr>, WindowsVpnError> {
@@ -6420,6 +6448,68 @@ mod tests {
         ] {
             assert!(!log.contains(private));
         }
+    }
+
+    #[test]
+    fn dns_lease_readback_accepts_on_link_families_and_retains_exact_ownership() {
+        let interface = agent_v1::PhysicalInterface {
+            interface_luid: 111,
+            interface_index: 11,
+            address_family_mask: 2,
+            dns_servers: vec!["192.0.2.53".into(), "fe80::53".into()],
+        };
+        let mut lease = agent_v1::DirectEgressLease {
+            interface_luid: 111,
+            interface_index: 11,
+            ..Default::default()
+        };
+        for target in ["192.0.2.53:53", "[fe80::53%11]:53"] {
+            assert!(direct_egress_interface_matches(
+                &interface,
+                &lease,
+                target.parse().unwrap(),
+                agent_v1::DirectEgressPurpose::PresetDns,
+            ));
+        }
+        for target in [
+            "192.0.2.54:53",
+            "192.0.2.53:443",
+            "[fe80::53]:53",
+            "[fe80::53%22]:53",
+        ] {
+            assert!(!direct_egress_interface_matches(
+                &interface,
+                &lease,
+                target.parse().unwrap(),
+                agent_v1::DirectEgressPurpose::PresetDns,
+            ));
+        }
+        for purpose in [
+            agent_v1::DirectEgressPurpose::Unspecified,
+            agent_v1::DirectEgressPurpose::PresetMasque,
+        ] {
+            assert!(!direct_egress_interface_matches(
+                &interface,
+                &lease,
+                "192.0.2.53:53".parse().unwrap(),
+                purpose,
+            ));
+        }
+        lease.interface_index = 22;
+        assert!(!direct_egress_interface_matches(
+            &interface,
+            &lease,
+            "192.0.2.53:53".parse().unwrap(),
+            agent_v1::DirectEgressPurpose::PresetDns,
+        ));
+        lease.interface_index = 11;
+        lease.interface_luid = 222;
+        assert!(!direct_egress_interface_matches(
+            &interface,
+            &lease,
+            "192.0.2.53:53".parse().unwrap(),
+            agent_v1::DirectEgressPurpose::PresetDns,
+        ));
     }
 
     #[test]

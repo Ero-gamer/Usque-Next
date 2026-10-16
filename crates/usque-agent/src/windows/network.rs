@@ -266,6 +266,74 @@ pub fn physical_interface_info(interface_luid: u64) -> Result<PhysicalInterfaceI
     })
 }
 
+/// Checks the route for an OS-reported DNS server on its owning physical NIC.
+/// Internet observation masks do not describe a NIC's on-link DNS families.
+/// The constrained read cannot choose the TUN or another adapter's route.
+pub fn physical_dns_route_available(
+    target: SocketAddr,
+    interface_luid: u64,
+    interface_index: u32,
+    tunnel_luid: u64,
+) -> Result<bool, NetworkError> {
+    require_luid(interface_luid)?;
+    require_luid(tunnel_luid)?;
+    if interface_luid == tunnel_luid || interface_index == 0 {
+        return Ok(false);
+    }
+    let scope = match target {
+        SocketAddr::V6(address) => address.scope_id(),
+        SocketAddr::V4(_) => 0,
+    };
+    let destination = sockaddr_from_ip_scoped(target.ip(), scope);
+    let mut route = MIB_IPFORWARD_ROW2::default();
+    let mut source = SOCKADDR_INET::default();
+    // SAFETY: the LUID and destination are initialized and live for this
+    // read-only call; both output records are exclusively borrowed.
+    let result = check("GetBestRoute2(DNS)", unsafe {
+        GetBestRoute2(
+            &luid(interface_luid),
+            0,
+            ptr::null(),
+            &destination,
+            0,
+            &mut route,
+            &mut source,
+        )
+    });
+    match result {
+        Err(error) if error.is_candidate_unavailable() || error.is_interface_churn() => {
+            return Ok(false);
+        }
+        Err(error) => return Err(error),
+        Ok(()) => {}
+    }
+    physical_dns_route_matches(target, interface_luid, interface_index, &route, &source)
+}
+
+fn physical_dns_route_matches(
+    target: SocketAddr,
+    interface_luid: u64,
+    interface_index: u32,
+    route: &MIB_IPFORWARD_ROW2,
+    source: &SOCKADDR_INET,
+) -> Result<bool, NetworkError> {
+    let (source, _) = ip_from_sockaddr(source)?;
+    let scoped = match target {
+        SocketAddr::V6(address) => {
+            (!address.ip().is_unicast_link_local() || address.scope_id() != 0)
+                && (address.scope_id() == 0 || address.scope_id() == interface_index)
+        }
+        SocketAddr::V4(_) => true,
+    };
+    Ok(luid_value(route.InterfaceLuid) == interface_luid
+        && route.InterfaceIndex == interface_index
+        && source.is_ipv4() == target.is_ipv4()
+        && !source.is_unspecified()
+        && !source.is_multicast()
+        && !source.is_loopback()
+        && scoped)
+}
+
 /// Observes the current route outside this tunnel without changing any route,
 /// interface, or DNS state. Owned endpoint host routes are excluded from the
 /// selection so their old interface cannot mask a newly preferred adapter.
@@ -1569,6 +1637,44 @@ impl NetworkError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dns_route_requires_the_exact_physical_interface_source_and_scope() {
+        let route = MIB_IPFORWARD_ROW2 {
+            InterfaceLuid: luid(111),
+            InterfaceIndex: 11,
+            ..Default::default()
+        };
+        let target = "192.0.2.53:53".parse().unwrap();
+        let source = sockaddr_from_ip("192.0.2.2".parse().unwrap());
+        assert!(physical_dns_route_matches(target, 111, 11, &route, &source).unwrap());
+        assert!(!physical_dns_route_matches(target, 222, 11, &route, &source).unwrap());
+        assert!(!physical_dns_route_matches(target, 111, 22, &route, &source).unwrap());
+        for invalid in ["0.0.0.0", "127.0.0.1", "224.0.0.53", "2001:db8::2"] {
+            let source = sockaddr_from_ip(invalid.parse().unwrap());
+            assert!(!physical_dns_route_matches(target, 111, 11, &route, &source).unwrap());
+        }
+        let source = sockaddr_from_ip_scoped("fe80::2".parse().unwrap(), 11);
+        assert!(
+            physical_dns_route_matches(
+                "[fe80::53%11]:53".parse().unwrap(),
+                111,
+                11,
+                &route,
+                &source,
+            )
+            .unwrap()
+        );
+        for target in ["[fe80::53]:53", "[fe80::53%22]:53"] {
+            assert!(
+                !physical_dns_route_matches(target.parse().unwrap(), 111, 11, &route, &source)
+                    .unwrap()
+            );
+        }
+        // These admission failures return before invoking IP Helper.
+        assert!(!physical_dns_route_available(target, 111, 11, 111).unwrap());
+        assert!(!physical_dns_route_available(target, 111, 0, 222).unwrap());
+    }
 
     #[test]
     fn retired_tun_routes_are_verified_individually_and_never_deleted_on_a_replacement() {
